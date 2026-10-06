@@ -1,0 +1,117 @@
+import { getDatabase } from '@/db/database';
+import { CustomerRepository } from '@/repositories/customer';
+import { SyncOutboxRepository } from '@/repositories/sync-outbox';
+import type { Customer } from '@/types/domain';
+
+export interface CreateCustomerInput {
+  shopId: string;
+  deviceId: string;
+  name: string;
+  phone?: string | null;
+}
+
+export class CreateCustomerService {
+  constructor(
+    private readonly repository: CustomerRepository,
+    private readonly syncOutboxRepository: SyncOutboxRepository
+  ) {}
+
+  async execute(
+    input: CreateCustomerInput
+  ): Promise<Customer> {
+    const name = input.name.trim();
+
+    if (!name) {
+      throw new Error('Customer name is required');
+    }
+
+    if (name.length > 150) {
+      throw new Error(
+        'Customer name cannot be longer than 150 characters'
+      );
+    }
+
+    const phone = normalizePhone(input.phone);
+
+    const now = new Date().toISOString();
+
+    const customer: Customer = {
+      id: crypto.randomUUID(),
+      shopId: input.shopId,
+      name,
+      phone,
+      createdAt: now,
+      updatedAt: now,
+    };
+
+    const operationId = crypto.randomUUID();
+
+    const db = await getDatabase();
+
+    await db.withTransactionAsync(async () => {
+      await this.repository.createWithDatabase(
+        db,
+        customer
+      );
+
+      await this.syncOutboxRepository.enqueueWithDatabase(
+        db,
+        {
+          id: operationId,
+          shopId: input.shopId,
+          deviceId: input.deviceId,
+
+          operationType: 'CUSTOMER_CREATE',
+          entityType: 'CUSTOMER',
+          entityId: customer.id,
+
+          payload: {
+            customer,
+          },
+
+          createdAt: now,
+        }
+      );
+    });
+
+    return customer;
+  }
+}
+
+function normalizePhone(
+  phone: string | null | undefined
+): string | null {
+  if (!phone) {
+    return null;
+  }
+
+  const normalized = phone
+    .trim()
+    .replace(/\s/g, '')
+    .replace(/-/g, '')
+    .replace(/\(/g, '')
+    .replace(/\)/g, '');
+
+  if (!normalized) {
+    return null;
+  }
+
+  // Pakistani mobile:
+  // 03012345678 -> +923012345678
+  if (
+    normalized.startsWith('03') &&
+    normalized.length === 11
+  ) {
+    return `+92${normalized.slice(1)}`;
+  }
+
+  // 923012345678 -> +923012345678
+  if (
+    normalized.startsWith('923') &&
+    normalized.length === 12
+  ) {
+    return `+${normalized}`;
+  }
+
+  return normalized;
+}

@@ -1,0 +1,109 @@
+import {
+  Redirect,
+  Tabs,
+} from 'expo-router';
+import {
+  useEffect,
+  useState,
+} from 'react';
+import {
+  ActivityIndicator,
+  View,
+} from 'react-native';
+
+import { BottomNavigation } from '@/components/layout';
+import { runMigrations } from '@/db/migrations';
+import { DeviceRepository } from '@/repositories/device';
+import { ShopRepository } from '@/repositories/shop';
+import { InitializeAppService } from '@/services/bootstrap/initialize';
+
+export default function TabsLayout() {
+  const [ready, setReady] = useState(false);
+  const [hasIdentity, setHasIdentity] =
+    useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function initialize() {
+      try {
+        await runMigrations();
+
+        const service =
+          new InitializeAppService(
+            new ShopRepository(),
+            new DeviceRepository()
+          );
+
+        const identity =
+          await service.execute();
+
+        if (cancelled) {
+          return;
+        }
+
+        setHasIdentity(identity !== null);
+        setReady(true);
+      } catch (error) {
+        console.error(
+          'Failed to initialize app:',
+          error
+        );
+
+        if (!cancelled) {
+          setReady(true);
+        }
+      }
+    }
+
+    initialize();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  if (!ready) {
+    return (
+      <View className="flex-1 items-center justify-center bg-background">
+        <ActivityIndicator size="large" />
+      </View>
+    );
+  }
+
+  if (!hasIdentity) {
+    return <Redirect href="/bootstrap" />;
+  }
+
+  return (
+    <Tabs
+      tabBar={(props) => (
+        <BottomNavigation {...props} />
+      )}
+      screenOptions={{
+        headerShown: false,
+      }}
+    >
+      <Tabs.Screen
+        name="index"
+        options={{
+          title: 'Home',
+        }}
+      />
+
+      <Tabs.Screen
+        name="customers"
+        options={{
+          title: 'Customers',
+        }}
+      />
+
+      <Tabs.Screen
+        name="customer"
+        options={{
+          href: null,
+        }}
+      />
+    </Tabs>
+  );
+}

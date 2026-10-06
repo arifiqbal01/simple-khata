@@ -1,0 +1,71 @@
+import '../../global.css';
+
+import {
+  SplineSans_400Regular,
+  SplineSans_500Medium,
+  SplineSans_600SemiBold,
+  SplineSans_700Bold,
+  useFonts,
+} from '@expo-google-fonts/spline-sans';
+import {
+  DefaultTheme,
+  ThemeProvider,
+} from '@react-navigation/native';
+import { Stack } from 'expo-router';
+import React from 'react';
+import {
+  ActivityIndicator,
+  View,
+} from 'react-native';
+
+const navigationTheme = {
+  ...DefaultTheme,
+  colors: {
+    ...DefaultTheme.colors,
+    background: '#F7F7F5',
+    card: '#FFFFFF',
+    text: '#181816',
+    border: '#E7E7E2',
+    primary: '#242422',
+  },
+};
+
+export default function RootLayout() {
+  const [fontsLoaded, fontError] = useFonts({
+    SplineSans_400Regular,
+    SplineSans_500Medium,
+    SplineSans_600SemiBold,
+    SplineSans_700Bold,
+  });
+
+  if (fontError) {
+    throw fontError;
+  }
+
+  if (!fontsLoaded) {
+    return (
+      <View className="flex-1 items-center justify-center bg-background">
+        <ActivityIndicator size="large" />
+      </View>
+    );
+  }
+
+  return (
+    <ThemeProvider value={navigationTheme}>
+      <Stack
+        screenOptions={{
+          headerShown: false,
+        }}
+      >
+        <Stack.Screen name="(tabs)" />
+
+        <Stack.Screen
+          name="bootstrap"
+          options={{
+            gestureEnabled: false,
+          }}
+        />
+      </Stack>
+    </ThemeProvider>
+  );
+}
