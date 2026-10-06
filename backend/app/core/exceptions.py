@@ -25,3 +25,21 @@ class ValidationException(AppException):
 class DatabaseException(AppException):
     status_code = 500
     default_message = "Database operation failed"
+
+
+class SyncException(AppException):
+    status_code = 500
+    default_message = "Sync operation failed"
+
+
+class SyncIdentityException(AppException):
+    status_code = 403
+    default_message = "Invalid sync identity"
+
+
+class SyncConflictException(ConflictException):
+    default_message = "Sync conflict"
+
+
+class SyncValidationException(ValidationException):
+    default_message = "Invalid sync request"

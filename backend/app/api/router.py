@@ -5,6 +5,7 @@ from app.api.routes.customers import router as customers_router
 from app.api.routes.health import router as health_router
 from app.api.routes.items import router as items_router
 from app.api.routes.ledger_entries import router as ledger_entries_router
+from app.api.routes.sync import router as sync_router
 
 api_router = APIRouter()
 
@@ -31,4 +32,9 @@ api_router.include_router(
 api_router.include_router(
     ledger_entries_router,
     tags=["Ledger"],
+)
+
+api_router.include_router(
+    sync_router,
+    tags=["Sync"],
 )
