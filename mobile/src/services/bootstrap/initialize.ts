@@ -61,13 +61,13 @@ export class InitializeAppService {
       return null;
     }
 
-    if (device.shopId !== shop.id) {
+    if (device.shop_id !== shop.id) {
       console.error(
         'Local device belongs to a different shop',
         {
           shopId: shop.id,
           deviceId: device.id,
-          deviceShopId: device.shopId,
+          deviceShopId: device.shop_id,
         }
       );
 

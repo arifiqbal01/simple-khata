@@ -16,7 +16,7 @@ import {
   useLocalSearchParams,
 } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-
+import * as Crypto from "expo-crypto";
 import { AppHeader } from '@/components/layout';
 import {
   AppText,
@@ -92,7 +92,7 @@ interface DraftItem {
 
 function createDraftItem(): DraftItem {
   return {
-    id: crypto.randomUUID(),
+    id: Crypto.randomUUID(),
     itemId: null,
     name: '',
   };
@@ -368,7 +368,7 @@ return () => {
     setItems((current) => [
       ...current,
       {
-        id: crypto.randomUUID(),
+        id: Crypto.randomUUID(),
         itemId: item.id,
         name: item.name,
       },

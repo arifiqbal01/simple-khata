@@ -59,10 +59,10 @@ export class DeviceRepository {
       `
         SELECT
           id,
-          shop_id AS shopId,
+          shop_id,
           name,
-          last_sync_at AS lastSyncAt,
-          created_at AS createdAt
+          last_sync_at,
+          created_at
         FROM devices
         WHERE id = ?
         LIMIT 1

@@ -10,6 +10,7 @@ import type {
   Device,
   Shop,
 } from '@/types/domain';
+import * as Crypto from 'expo-crypto';
 
 export interface CreateShopInput {
   shopName: string;
@@ -61,10 +62,10 @@ export class BootstrapDeviceService {
     await this.ensureInstallationIsFresh();
 
     const shopId =
-      crypto.randomUUID();
+      Crypto.randomUUID();
 
     const deviceId =
-      crypto.randomUUID();
+      Crypto.randomUUID();
 
     const remote =
       await createBootstrap({
@@ -89,15 +90,15 @@ export class BootstrapDeviceService {
     const shop: Shop = {
       id: shopId,
       name: shopName,
-      createdAt: now,
+      created_at: now,
     };
 
     const device: Device = {
       id: deviceId,
-      shopId,
+      shop_id: shopId,
       name: deviceName,
-      lastSyncAt: null,
-      createdAt: now,
+      last_sync_at: null,
+      created_at: now,
     };
 
     await this.persistIdentity(
@@ -152,7 +153,7 @@ export class BootstrapDeviceService {
     await this.ensureInstallationIsFresh();
 
     const deviceId =
-      crypto.randomUUID();
+      Crypto.randomUUID();
 
     const remote =
       await joinBootstrap({
@@ -176,15 +177,15 @@ export class BootstrapDeviceService {
     const shop: Shop = {
       id: shopId,
       name: shopName,
-      createdAt: now,
+      created_at: now,
     };
 
     const device: Device = {
       id: deviceId,
-      shopId,
+      shop_id: shopId,
       name: deviceName,
-      lastSyncAt: null,
-      createdAt: now,
+      last_sync_at: null,
+      created_at: now,
     };
 
     await this.persistIdentity(
@@ -250,7 +251,7 @@ export class BootstrapDeviceService {
               id: shop.id,
               name: shop.name,
               createdAt:
-                shop.createdAt,
+                shop.created_at,
             }
           );
 
@@ -260,10 +261,10 @@ export class BootstrapDeviceService {
             {
               id: device.id,
               shopId:
-                device.shopId,
+                device.shop_id,
               name: device.name,
               createdAt:
-                device.createdAt,
+                device.created_at,
             }
           );
 
@@ -274,7 +275,7 @@ export class BootstrapDeviceService {
               shopId: shop.id,
               deviceId: device.id,
               createdAt:
-                device.createdAt,
+                device.created_at,
             }
           );
       }

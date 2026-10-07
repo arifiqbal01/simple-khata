@@ -28,7 +28,7 @@ export function Chip({
       accessibilityRole="button"
       accessibilityState={{
         selected,
-        disabled,
+        disabled: disabled ?? false,
       }}
       className={`
         min-h-11

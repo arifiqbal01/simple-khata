@@ -4,6 +4,7 @@ import { LedgerRepository } from '@/repositories/ledger';
 import { SyncOutboxRepository } from '@/repositories/sync-outbox';
 import { requestSync } from '@/services/sync/sync-coordinator';
 import type { LedgerEntry } from '@/types/domain';
+import * as Crypto from 'expo-crypto';
 
 export interface RecordPaymentInput {
   shopId: string;
@@ -38,17 +39,17 @@ export class RecordPaymentService {
     const now = new Date().toISOString();
 
     const entry: LedgerEntry = {
-      id: crypto.randomUUID(),
-      customerId: input.customerId,
-      deviceId: input.deviceId,
+      id: Crypto.randomUUID(),
+      customer_id: input.customerId,
+      device_id: input.deviceId,
       type: 'PAYMENT',
       amount: input.amount,
       note: null,
-      occurredAt: input.occurredAt ?? now,
-      createdAt: now,
+      occurred_at: input.occurredAt ?? now,
+      created_at: now,
     };
 
-    const operationId = crypto.randomUUID();
+    const operationId = Crypto.randomUUID();
 
     const db = await getDatabase();
 
@@ -59,7 +60,16 @@ export class RecordPaymentService {
     await db.withTransactionAsync(async () => {
       await this.ledgerRepository.createWithDatabase(
         db,
-        entry
+        {
+          id: entry.id,
+          customerId: entry.customer_id,
+          deviceId: entry.device_id,
+          type: entry.type,
+          amount: entry.amount,
+          note: entry.note,
+          occurredAt: entry.occurred_at,
+          createdAt: entry.created_at,
+        }
       );
 
       await this.syncOutboxRepository.enqueueWithDatabase(

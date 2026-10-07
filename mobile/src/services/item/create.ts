@@ -3,6 +3,7 @@ import { ItemRepository } from '@/repositories/item';
 import { SyncOutboxRepository } from '@/repositories/sync-outbox';
 import { requestSync } from '@/services/sync/sync-coordinator';
 import type { Item } from '@/types/domain';
+import * as Crypto from 'expo-crypto';
 
 export interface CreateItemInput {
   shopId: string;
@@ -42,20 +43,25 @@ export class CreateItemService {
     const now = new Date().toISOString();
 
     const item: Item = {
-      id: crypto.randomUUID(),
-      shopId: input.shopId,
+      id: Crypto.randomUUID(),
+      shop_id: input.shopId,
       name,
-      createdAt: now,
+      created_at: now,
     };
 
-    const operationId = crypto.randomUUID();
+    const operationId = Crypto.randomUUID();
 
     const db = await getDatabase();
 
     await db.withTransactionAsync(async () => {
       await this.itemRepository.createWithDatabase(
         db,
-        item
+        {
+          id: item.id,
+          shopId: item.shop_id,
+          name: item.name,
+          createdAt: item.created_at,
+        }
       );
 
       await this.syncOutboxRepository.enqueueWithDatabase(

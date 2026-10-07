@@ -7,10 +7,12 @@ import {
   type AppTextProps,
 } from './AppText';
 
+export type SectionLabelProps = AppTextProps;
+
 export function SectionLabel({
   className = '',
   ...props
-}: AppTextProps) {
+}: SectionLabelProps) {
   return (
     <AppText
       {...props}

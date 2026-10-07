@@ -3,6 +3,7 @@ import { CustomerRepository } from '@/repositories/customer';
 import { SyncOutboxRepository } from '@/repositories/sync-outbox';
 import { requestSync } from '@/services/sync/sync-coordinator';
 import type { Customer } from '@/types/domain';
+import * as Crypto from 'expo-crypto';
 
 export interface CreateCustomerInput {
   shopId: string;
@@ -36,16 +37,20 @@ export class CreateCustomerService {
 
     const now = new Date().toISOString();
 
+    /*
+     * Domain objects use snake_case because they match
+     * the SQLite/API representation.
+     */
     const customer: Customer = {
-      id: crypto.randomUUID(),
-      shopId: input.shopId,
+      id: Crypto.randomUUID(),
+      shop_id: input.shopId,
       name,
       phone,
-      createdAt: now,
-      updatedAt: now,
+      created_at: now,
+      updated_at: now,
     };
 
-    const operationId = crypto.randomUUID();
+    const operationId = Crypto.randomUUID();
 
     const db = await getDatabase();
 
@@ -53,9 +58,19 @@ export class CreateCustomerService {
      * Local mutation + outbox enqueue must remain atomic.
      */
     await db.withTransactionAsync(async () => {
+      /*
+       * Repository write inputs use camelCase.
+       */
       await this.repository.createWithDatabase(
         db,
-        customer
+        {
+          id: customer.id,
+          shopId: customer.shop_id,
+          name: customer.name,
+          phone: customer.phone,
+          createdAt: customer.created_at,
+          updatedAt: customer.updated_at,
+        }
       );
 
       await this.syncOutboxRepository.enqueueWithDatabase(

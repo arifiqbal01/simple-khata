@@ -7,6 +7,7 @@ import {
 import { SyncOutboxRepository } from '@/repositories/sync-outbox';
 import { requestSync } from '@/services/sync/sync-coordinator';
 import type { LedgerEntry } from '@/types/domain';
+import * as Crypto from 'expo-crypto';
 
 export interface CreateUdhaarItemInput {
   itemId?: string | null;
@@ -61,23 +62,24 @@ export class CreateUdhaarService {
       }
 
       return {
-        id: crypto.randomUUID(),
+        id: Crypto.randomUUID(),
         itemId: item.itemId ?? null,
         name,
       };
     });
 
     const now = new Date().toISOString();
+    const occurredAt = input.occurredAt ?? now;
 
     const entry: LedgerEntry = {
-      id: crypto.randomUUID(),
-      customerId: input.customerId,
-      deviceId: input.deviceId,
+      id: Crypto.randomUUID(),
+      customer_id: input.customerId,
+      device_id: input.deviceId,
       type: 'UDHAAR',
       amount: input.amount,
-      note: input.note?.trim() || null,
-      occurredAt: input.occurredAt ?? now,
-      createdAt: now,
+      note: input.note ?? null,
+      occurred_at: occurredAt,
+      created_at: now,
     };
 
     /*
@@ -92,7 +94,7 @@ export class CreateUdhaarService {
       createdAt: now,
     }));
 
-    const operationId = crypto.randomUUID();
+    const operationId = Crypto.randomUUID();
 
     const db = await getDatabase();
 
@@ -105,7 +107,16 @@ export class CreateUdhaarService {
         .createUdhaarWithItemsWithDatabase(
           db,
           {
-            entry,
+            entry: {
+              id: entry.id,
+              customerId: entry.customer_id,
+              deviceId: entry.device_id,
+              type: entry.type,
+              amount: entry.amount,
+              note: entry.note,
+              occurredAt: entry.occurred_at,
+              createdAt: entry.created_at,
+            },
             items: normalizedItems,
           }
         );
