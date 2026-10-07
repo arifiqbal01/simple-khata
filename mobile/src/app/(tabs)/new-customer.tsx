@@ -62,6 +62,11 @@ export default function NewCustomerScreen() {
     trimmedName.length > 0 &&
     !saving;
 
+  function resetForm() {
+      setName('');
+      setPhone('');
+    }
+
   function handleClose() {
     if (from === 'customers') {
       router.replace('/customers');
@@ -100,6 +105,7 @@ export default function NewCustomerScreen() {
       phone: phone.trim() || null,
     });
 
+    resetForm();
     handleClose();
   } catch (error) {
     const message =

@@ -195,6 +195,10 @@ const parsedAmount =
       ? balance - parsedAmount
       : balance;
 
+  function resetForm() {
+      setAmount('');
+    }
+
   function handleClose() {
     if (
       from === 'ledger' &&
@@ -265,13 +269,14 @@ const parsedAmount =
       setSaving(true);
 
       await recordPaymentService.execute({
-        shopId,
-        customerId,
-        deviceId,
-        amount: parsedAmount,
-      });
+          shopId,
+          customerId,
+          deviceId,
+          amount: parsedAmount,
+        });
 
-      handleClose();
+        resetForm();
+        handleClose();
     } catch (error) {
       const message =
         error instanceof Error

@@ -244,6 +244,12 @@ return () => {
 };
 }, [customerId]);
 
+  function resetForm() {
+      setAmount('');
+      setUseItems(false);
+      setItems([]);
+    }
+
   function handleClose() {
     if (
       from === 'ledger' &&
@@ -492,14 +498,15 @@ return () => {
         await prepareItems();
 
       await createUdhaarService.execute({
-        shopId,
-        customerId,
-        deviceId,
-        amount: parsedAmount,
-        items: preparedItems,
-      });
+          shopId,
+          customerId,
+          deviceId,
+          amount: parsedAmount,
+          items: preparedItems,
+        });
 
-      handleClose();
+        resetForm();
+        handleClose();
     } catch (error) {
       const message =
         error instanceof Error
