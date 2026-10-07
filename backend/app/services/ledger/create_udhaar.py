@@ -6,7 +6,6 @@ from sqlalchemy.orm import Session
 from app.core.exceptions import (
     ConflictException,
     NotFoundException,
-    ValidationException,
 )
 from app.models.enums import LedgerEntryType
 from app.models.ledger_entry import LedgerEntry
@@ -56,17 +55,6 @@ class CreateUdhaarService:
 
         if device is None:
             raise NotFoundException("Device not found")
-
-        if data.items:
-            item_total = sum(
-                item.amount
-                for item in data.items
-            )
-
-            if item_total != data.amount:
-                raise ValidationException(
-                    "Item total must equal ledger entry amount"
-                )
 
         # Validate catalog items before creating anything.
         for item in data.items:

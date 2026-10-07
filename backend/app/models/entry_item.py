@@ -42,9 +42,9 @@ class EntryItem(UUIDPrimaryKeyMixin, Base):
         nullable=False,
     )
 
-    amount: Mapped[int] = mapped_column(
+    amount: Mapped[int | None] = mapped_column(
         BigInteger,
-        nullable=False,
+        nullable=True,
     )
 
     ledger_entry: Mapped["LedgerEntry"] = relationship(
