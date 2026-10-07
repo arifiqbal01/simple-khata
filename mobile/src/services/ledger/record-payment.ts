@@ -2,6 +2,7 @@ import { getDatabase } from '@/db/database';
 import { CustomerRepository } from '@/repositories/customer';
 import { LedgerRepository } from '@/repositories/ledger';
 import { SyncOutboxRepository } from '@/repositories/sync-outbox';
+import { requestSync } from '@/services/sync/sync-coordinator';
 import type { LedgerEntry } from '@/types/domain';
 
 export interface RecordPaymentInput {
@@ -51,6 +52,10 @@ export class RecordPaymentService {
 
     const db = await getDatabase();
 
+    /*
+     * Ledger mutation + outbox operation must be committed
+     * atomically before any network sync is attempted.
+     */
     await db.withTransactionAsync(async () => {
       await this.ledgerRepository.createWithDatabase(
         db,
@@ -75,6 +80,21 @@ export class RecordPaymentService {
 
           createdAt: now,
         }
+      );
+    });
+
+    /*
+     * Local payment is committed.
+     *
+     * Sync is fire-and-forget so an offline/network failure
+     * never causes the successful local payment to fail.
+     * The outbox remains available for a later reconnect,
+     * foreground, startup, or manual sync.
+     */
+    void requestSync().catch((error) => {
+      console.warn(
+        '[sync-trigger] payment-create failed',
+        error
       );
     });
 

@@ -42,9 +42,9 @@ class PushSyncService:
         self.repository = repository
 
     def execute(
-        self,
-        *,
-        data: SyncPushRequest,
+            self,
+            *,
+            data: SyncPushRequest,
     ) -> SyncPushResponse:
         validate_sync_identity(
             self.db,
@@ -54,8 +54,14 @@ class PushSyncService:
 
         acknowledged_operation_ids: list[UUID] = []
 
+        # Keep track of which operation is being processed so
+        # database conflicts can identify the exact operation.
+        current_operation: SyncPushOperation | None = None
+
         try:
             for operation in data.operations:
+                current_operation = operation
+
                 existing = self.repository.get_operation(
                     operation.id
                 )
@@ -94,7 +100,7 @@ class PushSyncService:
                     entity_id=operation.entityId,
                     operation_type=operation.operationType.value,
                     payload=operation.payload.model_dump(
-                        mode="json",
+                        mode="json"
                     ),
                 )
 
@@ -107,8 +113,36 @@ class PushSyncService:
         except IntegrityError as exc:
             self.db.rollback()
 
+            operation_id = (
+                str(current_operation.id)
+                if current_operation is not None
+                else "unknown"
+            )
+
+            operation_type = (
+                current_operation.operationType.value
+                if current_operation is not None
+                else "unknown"
+            )
+
+            entity_id = (
+                str(current_operation.entityId)
+                if current_operation is not None
+                else "unknown"
+            )
+
+            detail = (
+                str(exc.orig)
+                if exc.orig is not None
+                else str(exc)
+            )
+
             raise SyncConflictException(
-                "Sync operation conflicts with an existing record"
+                "Sync operation conflicts with an existing record. "
+                f"operationId={operation_id}, "
+                f"operationType={operation_type}, "
+                f"entityId={entity_id}. "
+                f"Database error: {detail}"
             ) from exc
 
         except Exception:

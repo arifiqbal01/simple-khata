@@ -23,23 +23,33 @@ import {
   MoneyInput,
   Screen,
 } from '@/components/ui';
+
 import { CustomerRepository } from '@/repositories/customer';
-import { DeviceRepository } from '@/repositories/device';
+import { LocalIdentityRepository } from '@/repositories/local-identity';
 import { LedgerRepository } from '@/repositories/ledger';
-import { ShopRepository } from '@/repositories/shop';
+import {
+  syncOutboxRepository,
+} from '@/repositories/sync-outbox';
+
 import { GetCustomerBalanceService } from '@/services/ledger/get-balance';
 import { RecordPaymentService } from '@/services/ledger/record-payment';
+
 import type { Customer } from '@/types/domain';
 
-const customerRepository = new CustomerRepository();
-const deviceRepository = new DeviceRepository();
-const ledgerRepository = new LedgerRepository();
-const shopRepository = new ShopRepository();
+const customerRepository =
+  new CustomerRepository();
+
+const ledgerRepository =
+  new LedgerRepository();
+
+const localIdentityRepository =
+  new LocalIdentityRepository();
 
 const recordPaymentService =
   new RecordPaymentService(
     ledgerRepository,
-    customerRepository
+    customerRepository,
+    syncOutboxRepository
   );
 
 const getCustomerBalanceService =
@@ -80,113 +90,110 @@ export default function PaymentScreen() {
   const [customer, setCustomer] =
     useState<Customer | null>(null);
 
-  const [balance, setBalance] = useState(0);
-  const [amount, setAmount] = useState('');
+  const [balance, setBalance] =
+    useState(0);
 
-  const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
+  const [amount, setAmount] =
+    useState('');
+
+  const [loading, setLoading] =
+    useState(true);
+
+  const [saving, setSaving] =
+    useState(false);
 
   useEffect(() => {
     let cancelled = false;
 
     async function initialize() {
-      try {
-        if (!customerId) {
-          throw new Error(
-            'Customer ID is missing'
-          );
-        }
-
-        const shop =
-          await shopRepository.getFirst();
-
-        if (!shop) {
-          throw new Error(
-            'Shop has not been initialized'
-          );
-        }
-
-        const device =
-          await deviceRepository.getFirstByShop(
-            shop.id
-          );
-
-        if (!device) {
-          throw new Error(
-            'Device has not been initialized'
-          );
-        }
-
-        const currentCustomer =
-          await customerRepository.getByIdAndShop(
-            customerId,
-            shop.id
-          );
-
-        if (!currentCustomer) {
-          throw new Error(
-            'Customer not found'
-          );
-        }
-
-        const currentBalance =
-          await getCustomerBalanceService.execute({
-            shopId: shop.id,
-            customerId,
-          });
-
-        if (cancelled) {
-          return;
-        }
-
-        setShopId(shop.id);
-        setDeviceId(device.id);
-        setCustomer(currentCustomer);
-        setBalance(currentBalance);
-      } catch (error) {
-        if (cancelled) {
-          return;
-        }
-
-        const message =
-          error instanceof Error
-            ? error.message
-            : 'Could not initialize Payment screen';
-
-        Alert.alert(
-          'Could not load customer',
-          message
-        );
-
-        console.error(
-          'Failed to initialize Payment screen:',
-          error
-        );
-      } finally {
-        if (!cancelled) {
-          setLoading(false);
-        }
-      }
+  try {
+    if (!customerId) {
+      throw new Error(
+        'Customer ID is missing'
+      );
     }
 
-    initialize();
+    const identity =
+      await localIdentityRepository.get();
 
-    return () => {
-      cancelled = true;
-    };
-  }, [customerId]);
+    if (!identity) {
+      throw new Error(
+        'Local installation identity not found'
+      );
+    }
 
-  const parsedAmount = Number(
-    amount.trim()
-  );
+    const currentCustomer =
+      await customerRepository.getByIdAndShop(
+        customerId,
+        identity.shopId
+      );
+
+    if (!currentCustomer) {
+      throw new Error(
+        'Customer not found'
+      );
+    }
+
+    const currentBalance =
+      await getCustomerBalanceService.execute({
+        shopId: identity.shopId,
+        customerId,
+      });
+
+    if (cancelled) {
+      return;
+    }
+
+    setShopId(identity.shopId);
+    setDeviceId(identity.deviceId);
+    setCustomer(currentCustomer);
+    setBalance(currentBalance);
+  } catch (error) {
+    if (cancelled) {
+      return;
+    }
+
+    const message =
+      error instanceof Error
+        ? error.message
+        : 'Could not initialize Payment screen';
+
+    Alert.alert(
+      'Could not load customer',
+      message
+    );
+
+    console.error(
+      'Failed to initialize Payment screen:',
+      error
+    );
+  } finally {
+    if (!cancelled) {
+      setLoading(false);
+    }
+  }
+}
+
+initialize();
+
+return () => {
+  cancelled = true;
+};
+}, [customerId]);
+
+const parsedAmount =
+  Number(amount.trim());
 
   const validAmount =
-    Number.isSafeInteger(parsedAmount) &&
+    Number.isSafeInteger(
+      parsedAmount
+    ) &&
     parsedAmount > 0;
 
-  const remainingBalance = validAmount
-    ? balance - parsedAmount
-    : balance;
+  const remainingBalance =
+    validAmount
+      ? balance - parsedAmount
+      : balance;
 
   function handleClose() {
     if (
@@ -217,7 +224,9 @@ export default function PaymentScreen() {
       return;
     }
 
-    setAmount(String(balance));
+    setAmount(
+      String(balance)
+    );
   }
 
   async function handleSave() {
@@ -230,7 +239,11 @@ export default function PaymentScreen() {
       return;
     }
 
-    if (!Number.isSafeInteger(parsedAmount)) {
+    if (
+      !Number.isSafeInteger(
+        parsedAmount
+      )
+    ) {
       Alert.alert(
         'Invalid amount',
         'Enter a whole rupee amount.'
@@ -283,7 +296,9 @@ export default function PaymentScreen() {
     return (
       <Screen>
         <View className="flex-1 items-center justify-center">
-          <ActivityIndicator size="large" />
+          <ActivityIndicator
+            size="large"
+          />
         </View>
       </Screen>
     );
@@ -330,7 +345,9 @@ export default function PaymentScreen() {
           className="flex-1"
           contentContainerClassName="pb-8"
           keyboardShouldPersistTaps="handled"
-          showsVerticalScrollIndicator={false}
+          showsVerticalScrollIndicator={
+            false
+          }
         >
           {/* Customer */}
           <View className="pt-5">
@@ -379,7 +396,8 @@ export default function PaymentScreen() {
                   text-foreground
                 "
               >
-                Rs {balance.toLocaleString()}
+                Rs{' '}
+                {balance.toLocaleString()}
               </AppText>
             </View>
           </View>
@@ -389,7 +407,9 @@ export default function PaymentScreen() {
             <MoneyInput
               label="Payment amount"
               value={amount}
-              onChangeText={setAmount}
+              onChangeText={
+                setAmount
+              }
               autoFocus
             />
 
@@ -431,7 +451,8 @@ export default function PaymentScreen() {
                     text-muted
                   "
                 >
-                  Rs {balance.toLocaleString()}
+                  Rs{' '}
+                  {balance.toLocaleString()}
                 </AppText>
               </Pressable>
             ) : null}

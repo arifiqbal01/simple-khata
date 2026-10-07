@@ -9,6 +9,7 @@ import {
 } from 'react-native';
 
 import { DeviceRepository } from '@/repositories/device';
+import { LocalIdentityRepository } from '@/repositories/local-identity';
 import { ShopRepository } from '@/repositories/shop';
 import { BootstrapDeviceService } from '@/services/bootstrap/device';
 
@@ -17,7 +18,8 @@ type BootstrapMode = 'create' | 'join';
 const bootstrapService =
   new BootstrapDeviceService(
     new ShopRepository(),
-    new DeviceRepository()
+    new DeviceRepository(),
+    new LocalIdentityRepository()
   );
 
 export default function BootstrapScreen() {

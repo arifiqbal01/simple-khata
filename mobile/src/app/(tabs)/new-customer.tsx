@@ -17,15 +17,30 @@ import {
   Screen,
   TextField,
 } from '@/components/ui';
+
 import { CustomerRepository } from '@/repositories/customer';
+import { LocalIdentityRepository } from '@/repositories/local-identity';
 import { ShopRepository } from '@/repositories/shop';
+import {
+  syncOutboxRepository,
+} from '@/repositories/sync-outbox';
+
 import { CreateCustomerService } from '@/services/customer/create';
 
-const customerRepository = new CustomerRepository();
-const shopRepository = new ShopRepository();
+const customerRepository =
+  new CustomerRepository();
+
+const shopRepository =
+  new ShopRepository();
+
+const localIdentityRepository =
+  new LocalIdentityRepository();
 
 const createCustomerService =
-  new CreateCustomerService(customerRepository);
+  new CreateCustomerService(
+    customerRepository,
+    syncOutboxRepository
+  );
 
 export default function NewCustomerScreen() {
   const params = useLocalSearchParams<{
@@ -38,11 +53,14 @@ export default function NewCustomerScreen() {
 
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
-  const [saving, setSaving] = useState(false);
+  const [saving, setSaving] =
+    useState(false);
 
   const trimmedName = name.trim();
+
   const canSave =
-    trimmedName.length > 0 && !saving;
+    trimmedName.length > 0 &&
+    !saving;
 
   function handleClose() {
     if (from === 'customers') {
@@ -54,47 +72,54 @@ export default function NewCustomerScreen() {
   }
 
   async function handleSave() {
-    if (!canSave) {
-      return;
-    }
-
-    try {
-      setSaving(true);
-
-      const shop = await shopRepository.getFirst();
-
-      if (!shop) {
-        throw new Error(
-          'Shop has not been initialized'
-        );
-      }
-
-      await createCustomerService.execute({
-        shopId: shop.id,
-        name: trimmedName,
-        phone: phone.trim() || null,
-      });
-
-      handleClose();
-    } catch (error) {
-      const message =
-        error instanceof Error
-          ? error.message
-          : 'Could not add customer';
-
-      Alert.alert(
-        'Could not add customer',
-        message
-      );
-
-      console.error(
-        'Failed to add customer:',
-        error
-      );
-    } finally {
-      setSaving(false);
-    }
+  if (!canSave) {
+    return;
   }
+
+  try {
+    setSaving(true);
+
+    /*
+     * Use the explicit identity for this installation.
+     * Do not infer the local device from the devices table,
+     * because it may also contain remote synced devices.
+     */
+    const identity =
+      await localIdentityRepository.get();
+
+    if (!identity) {
+      throw new Error(
+        'Local installation identity not found'
+      );
+    }
+
+    await createCustomerService.execute({
+      shopId: identity.shopId,
+      deviceId: identity.deviceId,
+      name: trimmedName,
+      phone: phone.trim() || null,
+    });
+
+    handleClose();
+  } catch (error) {
+    const message =
+      error instanceof Error
+        ? error.message
+        : 'Could not add customer';
+
+    Alert.alert(
+      'Could not add customer',
+      message
+    );
+
+    console.error(
+      'Failed to add customer:',
+      error
+    );
+  } finally {
+    setSaving(false);
+  }
+}
 
   return (
     <KeyboardAvoidingView

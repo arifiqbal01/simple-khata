@@ -1,6 +1,7 @@
 import { getDatabase } from '@/db/database';
 import { CustomerRepository } from '@/repositories/customer';
 import { SyncOutboxRepository } from '@/repositories/sync-outbox';
+import { requestSync } from '@/services/sync/sync-coordinator';
 import type { Customer } from '@/types/domain';
 
 export interface CreateCustomerInput {
@@ -48,6 +49,9 @@ export class CreateCustomerService {
 
     const db = await getDatabase();
 
+    /*
+     * Local mutation + outbox enqueue must remain atomic.
+     */
     await db.withTransactionAsync(async () => {
       await this.repository.createWithDatabase(
         db,
@@ -71,6 +75,20 @@ export class CreateCustomerService {
 
           createdAt: now,
         }
+      );
+    });
+
+    /*
+     * Local transaction has completed successfully.
+     *
+     * Request sync without awaiting it. Network/sync failure
+     * must never turn a successful local mutation into a
+     * failed customer creation.
+     */
+    void requestSync().catch((error) => {
+      console.warn(
+        '[sync-trigger] customer-create failed',
+        error
       );
     });
 

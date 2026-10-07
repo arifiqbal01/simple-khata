@@ -2,17 +2,46 @@ import * as SQLite from 'expo-sqlite';
 
 let database: SQLite.SQLiteDatabase | null = null;
 
-export async function getDatabase(): Promise<SQLite.SQLiteDatabase> {
+let databasePromise:
+  | Promise<SQLite.SQLiteDatabase>
+  | null = null;
+
+export function getDatabase(): Promise<SQLite.SQLiteDatabase> {
   if (database) {
-    return database;
+    return Promise.resolve(database);
   }
 
-  database = await SQLite.openDatabaseAsync('simple-khata.db');
+  if (databasePromise) {
+    return databasePromise;
+  }
 
-  await database.execAsync(`
-    PRAGMA journal_mode = WAL;
-    PRAGMA foreign_keys = ON;
-  `);
+  databasePromise = openDatabase();
 
-  return database;
+  return databasePromise;
+}
+
+async function openDatabase(): Promise<SQLite.SQLiteDatabase> {
+  try {
+    const db =
+      await SQLite.openDatabaseAsync(
+        'simple-khata.db'
+      );
+
+    await db.execAsync(`
+      PRAGMA journal_mode = WAL;
+      PRAGMA foreign_keys = ON;
+    `);
+
+    database = db;
+
+    return db;
+  } catch (error) {
+    /*
+     * Allow a later attempt to retry initialization
+     * if opening/configuring the database failed.
+     */
+    databasePromise = null;
+
+    throw error;
+  }
 }

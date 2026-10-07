@@ -12,8 +12,8 @@ import {
 } from 'react-native';
 
 import { BottomNavigation } from '@/components/layout';
-import { runMigrations } from '@/db/migrations';
 import { DeviceRepository } from '@/repositories/device';
+import { LocalIdentityRepository } from '@/repositories/local-identity';
 import { ShopRepository } from '@/repositories/shop';
 import { InitializeAppService } from '@/services/bootstrap/initialize';
 
@@ -27,12 +27,12 @@ export default function TabsLayout() {
 
     async function initialize() {
       try {
-        await runMigrations();
 
         const service =
           new InitializeAppService(
             new ShopRepository(),
-            new DeviceRepository()
+            new DeviceRepository(),
+            new LocalIdentityRepository()
           );
 
         const identity =

@@ -18,6 +18,16 @@ class BootstrapCreate(BaseModel):
     )
 
 
+class BootstrapJoin(BaseModel):
+    shop_id: UUID
+    device_id: UUID
+
+    device_name: str | None = Field(
+        default=None,
+        max_length=150,
+    )
+
+
 class BootstrapRead(BaseModel):
     shop_id: UUID
     device_id: UUID

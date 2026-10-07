@@ -26,11 +26,15 @@ import {
   Screen,
   TextField,
 } from '@/components/ui';
+
 import { CustomerRepository } from '@/repositories/customer';
-import { DeviceRepository } from '@/repositories/device';
 import { ItemRepository } from '@/repositories/item';
 import { LedgerRepository } from '@/repositories/ledger';
-import { ShopRepository } from '@/repositories/shop';
+import { LocalIdentityRepository } from '@/repositories/local-identity';
+import {
+  syncOutboxRepository,
+} from '@/repositories/sync-outbox';
+
 import { CreateItemService } from '@/services/item/create';
 import { SearchItemsService } from '@/services/item/search';
 import { GetCustomerBalanceService } from '@/services/ledger/get-balance';
@@ -38,27 +42,40 @@ import {
   CreateUdhaarService,
   type CreateUdhaarItemInput,
 } from '@/services/ledger/create-udhaar';
+
 import type {
   Customer,
   Item,
 } from '@/types/domain';
 
-const customerRepository = new CustomerRepository();
-const deviceRepository = new DeviceRepository();
-const itemRepository = new ItemRepository();
-const ledgerRepository = new LedgerRepository();
-const shopRepository = new ShopRepository();
+const customerRepository =
+  new CustomerRepository();
+
+const itemRepository =
+  new ItemRepository();
+
+const ledgerRepository =
+  new LedgerRepository();
+
+const localIdentityRepository =
+  new LocalIdentityRepository();
 
 const createItemService =
-  new CreateItemService(itemRepository);
+  new CreateItemService(
+    itemRepository,
+    syncOutboxRepository
+  );
 
 const searchItemsService =
-  new SearchItemsService(itemRepository);
+  new SearchItemsService(
+    itemRepository
+  );
 
 const createUdhaarService =
   new CreateUdhaarService(
     ledgerRepository,
-    customerRepository
+    customerRepository,
+    syncOutboxRepository
   );
 
 const getCustomerBalanceService =
@@ -113,8 +130,11 @@ export default function AddUdhaarScreen() {
   const [customer, setCustomer] =
     useState<Customer | null>(null);
 
-  const [balance, setBalance] = useState(0);
-  const [amount, setAmount] = useState('');
+  const [balance, setBalance] =
+    useState(0);
+
+  const [amount, setAmount] =
+    useState('');
 
   const [useItems, setUseItems] =
     useState(false);
@@ -123,112 +143,106 @@ export default function AddUdhaarScreen() {
     DraftItem[]
   >([]);
 
-  const [availableItems, setAvailableItems] =
-    useState<Item[]>([]);
+  const [
+    availableItems,
+    setAvailableItems,
+  ] = useState<Item[]>([]);
 
-  const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
+  const [loading, setLoading] =
+    useState(true);
+
+  const [saving, setSaving] =
+    useState(false);
 
   useEffect(() => {
     let cancelled = false;
 
     async function initialize() {
-      try {
-        if (!customerId) {
-          throw new Error(
-            'Customer ID is missing'
-          );
-        }
-
-        const shop =
-          await shopRepository.getFirst();
-
-        if (!shop) {
-          throw new Error(
-            'Shop has not been initialized'
-          );
-        }
-
-        const device =
-          await deviceRepository.getFirstByShop(
-            shop.id
-          );
-
-        if (!device) {
-          throw new Error(
-            'Device has not been initialized'
-          );
-        }
-
-        const currentCustomer =
-          await customerRepository.getByIdAndShop(
-            customerId,
-            shop.id
-          );
-
-        if (!currentCustomer) {
-          throw new Error(
-            'Customer not found'
-          );
-        }
-
-        const [
-          currentBalance,
-          currentItems,
-        ] = await Promise.all([
-          getCustomerBalanceService.execute({
-            shopId: shop.id,
-            customerId,
-          }),
-
-          searchItemsService.execute({
-            shopId: shop.id,
-            query: '',
-            limit: 100,
-          }),
-        ]);
-
-        if (cancelled) {
-          return;
-        }
-
-        setShopId(shop.id);
-        setDeviceId(device.id);
-        setCustomer(currentCustomer);
-        setBalance(currentBalance);
-        setAvailableItems(currentItems);
-      } catch (error) {
-        if (cancelled) {
-          return;
-        }
-
-        const message =
-          error instanceof Error
-            ? error.message
-            : 'Could not initialize Udhaar screen';
-
-        Alert.alert(
-          'Could not load customer',
-          message
-        );
-
-        console.error(
-          'Failed to initialize Udhaar screen:',
-          error
-        );
-      } finally {
-        if (!cancelled) {
-          setLoading(false);
-        }
-      }
+  try {
+    if (!customerId) {
+      throw new Error(
+        'Customer ID is missing'
+      );
     }
 
-    initialize();
+    const identity =
+      await localIdentityRepository.get();
 
-    return () => {
-      cancelled = true;
-    };
-  }, [customerId]);
+    if (!identity) {
+      throw new Error(
+        'Local installation identity not found'
+      );
+    }
+
+    const currentCustomer =
+      await customerRepository.getByIdAndShop(
+        customerId,
+        identity.shopId
+      );
+
+    if (!currentCustomer) {
+      throw new Error(
+        'Customer not found'
+      );
+    }
+
+    const [
+      currentBalance,
+      currentItems,
+    ] = await Promise.all([
+      getCustomerBalanceService.execute({
+        shopId: identity.shopId,
+        customerId,
+      }),
+
+      searchItemsService.execute({
+        shopId: identity.shopId,
+        query: '',
+        limit: 100,
+      }),
+    ]);
+
+    if (cancelled) {
+      return;
+    }
+
+    setShopId(identity.shopId);
+    setDeviceId(identity.deviceId);
+    setCustomer(currentCustomer);
+    setBalance(currentBalance);
+    setAvailableItems(currentItems);
+  } catch (error) {
+    if (cancelled) {
+      return;
+    }
+
+    const message =
+      error instanceof Error
+        ? error.message
+        : 'Could not initialize Udhaar screen';
+
+    Alert.alert(
+      'Could not load customer',
+      message
+    );
+
+    console.error(
+      'Failed to initialize Udhaar screen:',
+      error
+    );
+  } finally {
+    if (!cancelled) {
+      setLoading(false);
+    }
+  }
+}
+
+initialize();
+
+return () => {
+  cancelled = true;
+};
+}, [customerId]);
 
   function handleClose() {
     if (
@@ -258,7 +272,9 @@ export default function AddUdhaarScreen() {
     setUseItems(true);
 
     if (items.length === 0) {
-      setItems([createDraftItem()]);
+      setItems([
+        createDraftItem(),
+      ]);
     }
   }
 
@@ -276,7 +292,9 @@ export default function AddUdhaarScreen() {
     ]);
   }
 
-  function handleRemoveItemRow(id: string) {
+  function handleRemoveItemRow(
+    id: string
+  ) {
     setItems((current) =>
       current.filter(
         (item) => item.id !== id
@@ -304,27 +322,34 @@ export default function AddUdhaarScreen() {
     draftId: string,
     name: string
   ) {
-    updateDraftItem(draftId, {
-      name,
-      itemId: null,
-    });
+    updateDraftItem(
+      draftId,
+      {
+        name,
+        itemId: null,
+      }
+    );
   }
 
   function handleSelectItem(
     draftId: string,
     item: Item
   ) {
-    updateDraftItem(draftId, {
-      itemId: item.id,
-      name: item.name,
-    });
+    updateDraftItem(
+      draftId,
+      {
+        itemId: item.id,
+        name: item.name,
+      }
+    );
   }
 
   function handleToggleAvailableItem(
     item: Item
   ) {
     const selected = items.some(
-      (draft) => draft.itemId === item.id
+      (draft) =>
+        draft.itemId === item.id
     );
 
     if (selected) {
@@ -363,17 +388,25 @@ export default function AddUdhaarScreen() {
       );
     }
 
+    if (!deviceId) {
+      throw new Error(
+        'Device has not been initialized'
+      );
+    }
+
     const preparedItems:
       CreateUdhaarItemInput[] = [];
 
     for (const draft of items) {
-      const name = draft.name.trim();
+      const name =
+        draft.name.trim();
 
       if (!name) {
         continue;
       }
 
-      let itemId = draft.itemId;
+      let itemId =
+        draft.itemId;
 
       if (!itemId) {
         const existingItem =
@@ -386,20 +419,25 @@ export default function AddUdhaarScreen() {
           );
 
         if (existingItem) {
-          itemId = existingItem.id;
+          itemId =
+            existingItem.id;
         } else {
           const createdItem =
             await createItemService.execute({
               shopId,
+              deviceId,
               name,
             });
 
-          itemId = createdItem.id;
+          itemId =
+            createdItem.id;
 
-          setAvailableItems((current) => [
-            ...current,
-            createdItem,
-          ]);
+          setAvailableItems(
+            (current) => [
+              ...current,
+              createdItem,
+            ]
+          );
         }
       }
 
@@ -422,11 +460,14 @@ export default function AddUdhaarScreen() {
       return;
     }
 
-    const parsedAmount = Number(
-      amount.trim()
-    );
+    const parsedAmount =
+      Number(amount.trim());
 
-    if (!Number.isSafeInteger(parsedAmount)) {
+    if (
+      !Number.isSafeInteger(
+        parsedAmount
+      )
+    ) {
       Alert.alert(
         'Invalid amount',
         'Enter a whole rupee amount.'
@@ -483,7 +524,9 @@ export default function AddUdhaarScreen() {
     return (
       <Screen>
         <View className="flex-1 items-center justify-center">
-          <ActivityIndicator size="large" />
+          <ActivityIndicator
+            size="large"
+          />
         </View>
       </Screen>
     );
@@ -510,12 +553,13 @@ export default function AddUdhaarScreen() {
     );
   }
 
-  const parsedAmount = Number(
-    amount.trim()
-  );
+  const parsedAmount =
+    Number(amount.trim());
 
   const validAmount =
-    Number.isSafeInteger(parsedAmount) &&
+    Number.isSafeInteger(
+      parsedAmount
+    ) &&
     parsedAmount > 0;
 
   return (
@@ -538,7 +582,9 @@ export default function AddUdhaarScreen() {
           className="flex-1"
           contentContainerClassName="pb-8"
           keyboardShouldPersistTaps="handled"
-          showsVerticalScrollIndicator={false}
+          showsVerticalScrollIndicator={
+            false
+          }
         >
           {/* Customer */}
           <View className="pb-8 pt-5">
@@ -574,7 +620,8 @@ export default function AddUdhaarScreen() {
                   text-foreground
                 "
               >
-                Rs {balance.toLocaleString()}
+                Rs{' '}
+                {balance.toLocaleString()}
               </AppText>
             </View>
           </View>
@@ -584,7 +631,9 @@ export default function AddUdhaarScreen() {
             <MoneyInput
               label="Amount"
               value={amount}
-              onChangeText={setAmount}
+              onChangeText={
+                setAmount
+              }
               autoFocus
             />
           </View>
@@ -620,7 +669,9 @@ export default function AddUdhaarScreen() {
               {useItems &&
               items.length > 0 ? (
                 <Pressable
-                  onPress={handleDisableItems}
+                  onPress={
+                    handleDisableItems
+                  }
                   hitSlop={8}
                   className="py-1 active:opacity-60"
                 >
@@ -635,7 +686,8 @@ export default function AddUdhaarScreen() {
             </View>
 
             {/* Common item chips */}
-            {availableItems.length > 0 ? (
+            {availableItems.length >
+            0 ? (
               <View className="mt-4 flex-row flex-wrap gap-2">
                 {availableItems
                   .slice(0, 6)
@@ -649,9 +701,15 @@ export default function AddUdhaarScreen() {
 
                     return (
                       <Chip
-                        key={item.id}
-                        label={item.name}
-                        selected={selected}
+                        key={
+                          item.id
+                        }
+                        label={
+                          item.name
+                        }
+                        selected={
+                          selected
+                        }
                         onPress={() =>
                           handleToggleAvailableItem(
                             item
@@ -678,26 +736,37 @@ export default function AddUdhaarScreen() {
                         .toLocaleLowerCase();
 
                     const matches =
-                      searchName.length > 0
+                      searchName.length >
+                      0
                         ? availableItems
-                            .filter((item) =>
-                              item.name
-                                .toLocaleLowerCase()
-                                .includes(
-                                  searchName
-                                )
+                            .filter(
+                              (
+                                item
+                              ) =>
+                                item.name
+                                  .toLocaleLowerCase()
+                                  .includes(
+                                    searchName
+                                  )
                             )
-                            .slice(0, 5)
+                            .slice(
+                              0,
+                              5
+                            )
                         : [];
 
                     return (
                       <View
-                        key={draft.id}
+                        key={
+                          draft.id
+                        }
                         className="gap-2"
                       >
                         <View className="flex-row items-center gap-2">
                           <TextField
-                            value={draft.name}
+                            value={
+                              draft.name
+                            }
                             onChangeText={(
                               value
                             ) =>
@@ -731,13 +800,16 @@ export default function AddUdhaarScreen() {
                           >
                             <Ionicons
                               name="close"
-                              size={21}
+                              size={
+                                21
+                              }
                               color="#D9544D"
                             />
                           </Pressable>
                         </View>
 
-                        {matches.length > 0 ? (
+                        {matches.length >
+                        0 ? (
                           <View className="overflow-hidden rounded-control border border-border bg-surface">
                             {matches.map(
                               (
@@ -785,7 +857,9 @@ export default function AddUdhaarScreen() {
 
             {/* Other item */}
             <Pressable
-              onPress={handleAddItemRow}
+              onPress={
+                handleAddItemRow
+              }
               className="
                 mt-4
                 flex-row
@@ -827,8 +901,12 @@ export default function AddUdhaarScreen() {
                 : 'Add Udhaar'
             }
             loading={saving}
-            disabled={!validAmount}
-            onPress={handleSave}
+            disabled={
+              !validAmount
+            }
+            onPress={
+              handleSave
+            }
           />
         </View>
       </Screen>

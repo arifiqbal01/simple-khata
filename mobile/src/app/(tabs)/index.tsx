@@ -2,6 +2,7 @@ import React, {
   useCallback,
   useEffect,
   useState,
+  useSyncExternalStore,
 } from 'react';
 import {
   ActivityIndicator,
@@ -13,22 +14,30 @@ import {
   router,
   useFocusEffect,
 } from 'expo-router';
-
+import {
+  getSyncState,
+  subscribeToSyncState,
+} from '@/services/sync/sync-coordinator';
 import { CustomerList } from '@/components/customer';
 import {
   AppText,
   EmptyState,
   Screen,
   SearchField,
+  SyncStatusBadge,
 } from '@/components/ui';
+
 import {
   CustomerRepository,
   type CustomerWithBalance,
 } from '@/repositories/customer';
 import { ShopRepository } from '@/repositories/shop';
 
-const customerRepository = new CustomerRepository();
-const shopRepository = new ShopRepository();
+const customerRepository =
+  new CustomerRepository();
+
+const shopRepository =
+  new ShopRepository();
 
 export default function HomeScreen() {
   const [shopId, setShopId] = useState<
@@ -45,13 +54,22 @@ export default function HomeScreen() {
   ] = useState(0);
 
   const [query, setQuery] = useState('');
-  const [loading, setLoading] = useState(true);
+
+  const [loading, setLoading] =
+    useState(true);
+
   const [refreshing, setRefreshing] =
     useState(false);
 
   const [error, setError] = useState<
     string | null
   >(null);
+
+  const syncState = useSyncExternalStore(
+      subscribeToSyncState,
+      getSyncState,
+      getSyncState
+    );
 
   const loadHome = useCallback(
     async (
@@ -147,7 +165,7 @@ export default function HomeScreen() {
       }
     }
 
-    initialize();
+    void initialize();
 
     return () => {
       cancelled = true;
@@ -160,18 +178,46 @@ export default function HomeScreen() {
         return;
       }
 
-      loadHome(shopId, query);
-    }, [shopId, loading, query, loadHome])
+      void loadHome(shopId, query);
+    }, [
+      shopId,
+      loading,
+      query,
+      loadHome,
+    ])
   );
 
-  async function handleSearch(value: string) {
+useEffect(() => {
+  if (
+    !shopId ||
+    loading ||
+    syncState.dataVersion === 0
+  ) {
+    return;
+  }
+
+  void loadHome(shopId, query);
+}, [
+  syncState.dataVersion,
+  shopId,
+  loading,
+  query,
+  loadHome,
+]);
+
+  async function handleSearch(
+    value: string
+  ) {
     setQuery(value);
 
     if (!shopId) {
       return;
     }
 
-    await loadHome(shopId, value);
+    await loadHome(
+      shopId,
+      value
+    );
   }
 
   async function handleRefresh() {
@@ -239,7 +285,9 @@ export default function HomeScreen() {
         refreshing={refreshing}
         onRefresh={handleRefresh}
         onQuickUdhaar={handleQuickUdhaar}
-        onOpenCustomer={handleCustomerDetails}
+        onOpenCustomer={
+          handleCustomerDetails
+        }
         contentContainerClassName={
           customers.length === 0
             ? 'flex-grow pb-5'
@@ -248,7 +296,14 @@ export default function HomeScreen() {
         ListHeaderComponent={
           <View>
             {/* Header */}
-            <View className="h-[92px] justify-center">
+            <View
+              className="
+                h-[92px]
+                flex-row
+                items-center
+                justify-between
+              "
+            >
               <AppText
                 variant="title"
                 className="
@@ -258,6 +313,8 @@ export default function HomeScreen() {
               >
                 Khata
               </AppText>
+
+              <SyncStatusBadge />
             </View>
 
             {/* Outstanding */}
@@ -292,7 +349,9 @@ export default function HomeScreen() {
             <View className="mb-8">
               <SearchField
                 value={query}
-                onChangeText={handleSearch}
+                onChangeText={
+                  handleSearch
+                }
                 placeholder="Search customers..."
               />
             </View>

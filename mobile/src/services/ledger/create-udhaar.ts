@@ -5,6 +5,7 @@ import {
   type CreateUdhaarItemValues,
 } from '@/repositories/ledger';
 import { SyncOutboxRepository } from '@/repositories/sync-outbox';
+import { requestSync } from '@/services/sync/sync-coordinator';
 import type { LedgerEntry } from '@/types/domain';
 
 export interface CreateUdhaarItemInput {
@@ -79,10 +80,26 @@ export class CreateUdhaarService {
       createdAt: now,
     };
 
+    /*
+     * Local SQLite and sync API intentionally use
+     * different representations for ledger-entry items.
+     */
+    const syncItems = normalizedItems.map((item) => ({
+      id: item.id,
+      ledgerEntryId: entry.id,
+      itemId: item.itemId,
+      itemName: item.name,
+      createdAt: now,
+    }));
+
     const operationId = crypto.randomUUID();
 
     const db = await getDatabase();
 
+    /*
+     * Domain mutation + outbox enqueue are one atomic
+     * local transaction.
+     */
     await db.withTransactionAsync(async () => {
       await this.ledgerRepository
         .createUdhaarWithItemsWithDatabase(
@@ -105,11 +122,25 @@ export class CreateUdhaarService {
 
           payload: {
             entry,
-            items: normalizedItems,
+            items: syncItems,
           },
 
           createdAt: now,
         });
+    });
+
+    /*
+     * Transaction is committed at this point.
+     *
+     * Do not await sync. The local udhaar operation has
+     * already succeeded and must remain successful even
+     * when the device is offline.
+     */
+    void requestSync().catch((error) => {
+      console.warn(
+        '[sync-trigger] udhaar-create failed',
+        error
+      );
     });
 
     return entry;

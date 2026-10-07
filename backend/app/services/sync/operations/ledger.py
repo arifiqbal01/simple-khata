@@ -20,6 +20,7 @@ def apply_ledger_entry_create(
     operation: LedgerEntryCreateOperation,
 ) -> None:
     data = operation.payload.entry
+    items = operation.payload.items
 
     ledger_repository = LedgerEntryRepository(db)
     entry_item_repository = EntryItemRepository(db)
@@ -35,6 +36,11 @@ def apply_ledger_entry_create(
     if data.deviceId != device_id:
         raise SyncConflictException(
             "Ledger entry device does not match pushing device"
+        )
+
+    if data.amount <= 0:
+        raise SyncConflictException(
+            "Ledger entry amount must be greater than zero"
         )
 
     existing = ledger_repository.get_by_id(
@@ -69,12 +75,13 @@ def apply_ledger_entry_create(
     if data.type == LedgerEntryType.UDHAAR:
         _validate_udhaar_items(
             shop_id=shop_id,
-            data=data,
+            ledger_entry_id=data.id,
+            items=items,
             item_repository=item_repository,
         )
 
     elif data.type == LedgerEntryType.PAYMENT:
-        if operation.payload.items:
+        if items:
             raise SyncConflictException(
                 "Payment ledger entries cannot contain items"
             )
@@ -94,12 +101,7 @@ def apply_ledger_entry_create(
         occurred_at=data.occurredAt,
     )
 
-    for item_data in operation.payload.items:
-        if item_data.ledgerEntryId != data.id:
-            raise SyncConflictException(
-                "Entry item belongs to another ledger entry"
-            )
-
+    for item_data in items:
         entry_item_repository.create(
             entry_item_id=item_data.id,
             ledger_entry_id=entry.id,
@@ -112,29 +114,21 @@ def apply_ledger_entry_create(
 def _validate_udhaar_items(
     *,
     shop_id: UUID,
-    data,
+    ledger_entry_id: UUID,
+    items,
     item_repository: ItemRepository,
 ) -> None:
-    if data.amount <= 0:
-        raise SyncConflictException(
-            "Ledger entry amount must be greater than zero"
-        )
-
-    # Match CreateUdhaarService:
-    # when item breakdown exists, it must equal the
-    # authoritative ledger entry amount.
-    if data.items:
-        item_total = sum(
-            item.amount
-            for item in data.items
-        )
-
-        if item_total != data.amount:
+    for item in items:
+        if item.ledgerEntryId != ledger_entry_id:
             raise SyncConflictException(
-                "Item total must equal ledger entry amount"
+                "Entry item belongs to another ledger entry"
             )
 
-    for item in data.items:
+        if not item.itemName.strip():
+            raise SyncConflictException(
+                "Entry item name is required"
+            )
+
         if item.itemId is None:
             continue
 

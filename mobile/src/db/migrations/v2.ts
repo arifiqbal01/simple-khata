@@ -1,8 +1,16 @@
-import { getDatabase } from '../database';
+import type { SQLiteDatabase } from 'expo-sqlite';
 
-export async function migrateToVersion2(): Promise<void> {
-  const db = await getDatabase();
-
+/**
+ * Migration v2
+ *
+ * Makes entry_items.amount nullable.
+ *
+ * The database connection is provided by the migration runner
+ * so migrations share a single SQLite connection.
+ */
+export async function migrateToVersion2(
+  db: SQLiteDatabase
+): Promise<void> {
   await db.withTransactionAsync(async () => {
     await db.execAsync(`
       CREATE TABLE entry_items_v2 (

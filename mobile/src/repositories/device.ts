@@ -59,37 +59,15 @@ export class DeviceRepository {
       `
         SELECT
           id,
-          shop_id,
+          shop_id AS shopId,
           name,
-          last_sync_at,
-          created_at
+          last_sync_at AS lastSyncAt,
+          created_at AS createdAt
         FROM devices
         WHERE id = ?
         LIMIT 1
       `,
       deviceId
-    );
-  }
-
-  async getFirstByShop(
-    shopId: string
-  ): Promise<Device | null> {
-    const db = await getDatabase();
-
-    return db.getFirstAsync<Device>(
-      `
-        SELECT
-          id,
-          shop_id,
-          name,
-          last_sync_at,
-          created_at
-        FROM devices
-        WHERE shop_id = ?
-        ORDER BY created_at ASC
-        LIMIT 1
-      `,
-      shopId
     );
   }
 }

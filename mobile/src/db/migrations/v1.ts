@@ -1,8 +1,16 @@
-import { getDatabase } from '../database';
+import type { SQLiteDatabase } from 'expo-sqlite';
 
-export async function migrateToVersion1(): Promise<void> {
-  const db = await getDatabase();
-
+/**
+ * Migration v1
+ *
+ * Creates the initial local database schema.
+ *
+ * The database connection is provided by the migration runner
+ * so migrations do not open additional SQLite connections.
+ */
+export async function migrateToVersion1(
+  db: SQLiteDatabase
+): Promise<void> {
   await db.withTransactionAsync(async () => {
     await db.execAsync(`
       CREATE TABLE IF NOT EXISTS shops (

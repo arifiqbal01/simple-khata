@@ -1,6 +1,7 @@
 import { getDatabase } from '@/db/database';
 import { ItemRepository } from '@/repositories/item';
 import { SyncOutboxRepository } from '@/repositories/sync-outbox';
+import { requestSync } from '@/services/sync/sync-coordinator';
 import type { Item } from '@/types/domain';
 
 export interface CreateItemInput {
@@ -69,11 +70,24 @@ export class CreateItemService {
           entityId: item.id,
 
           payload: {
-            item,
+            item: {
+              ...item,
+              updatedAt: now,
+            },
           },
 
           createdAt: now,
         }
+      );
+    });
+
+    // Local mutation + outbox transaction has committed.
+    // Sync is intentionally fire-and-forget so network
+    // failure never causes the local item creation to fail.
+    void requestSync().catch((error) => {
+      console.warn(
+        '[sync-trigger] item-create failed',
+        error
       );
     });
 

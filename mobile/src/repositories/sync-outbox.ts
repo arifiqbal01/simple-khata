@@ -129,7 +129,9 @@ export class SyncOutboxRepository {
    * Do NOT use this after separately committing a financial/domain write.
    * Financial writes and their outbox operation must be committed atomically.
    */
-  async enqueue(input: EnqueueSyncOperationInput): Promise<void> {
+  async enqueue(
+    input: EnqueueSyncOperationInput,
+  ): Promise<void> {
     const db = await getDatabase();
 
     await db.withTransactionAsync(async () => {
@@ -151,31 +153,32 @@ export class SyncOutboxRepository {
   ): Promise<SyncOutboxRecord[]> {
     const db = await getDatabase();
 
-    const rows = await db.getAllAsync<SyncOutboxRow>(
-      `
-        SELECT
-          id,
-          shop_id,
-          device_id,
-          operation_type,
-          entity_type,
-          entity_id,
-          payload,
-          attempt_count,
-          next_attempt_at,
-          last_attempt_at,
-          last_error,
-          created_at
-        FROM sync_outbox
-        WHERE
-          next_attempt_at IS NULL
-          OR next_attempt_at <= ?
-        ORDER BY created_at ASC
-        LIMIT ?
-      `,
-      now,
-      limit,
-    );
+    const rows =
+      await db.getAllAsync<SyncOutboxRow>(
+        `
+          SELECT
+            id,
+            shop_id,
+            device_id,
+            operation_type,
+            entity_type,
+            entity_id,
+            payload,
+            attempt_count,
+            next_attempt_at,
+            last_attempt_at,
+            last_error,
+            created_at
+          FROM sync_outbox
+          WHERE
+            next_attempt_at IS NULL
+            OR next_attempt_at <= ?
+          ORDER BY created_at ASC
+          LIMIT ?
+        `,
+        now,
+        limit,
+      );
 
     return rows.map(mapRow);
   }
@@ -186,7 +189,9 @@ export class SyncOutboxRepository {
    * An outbox operation must only be deleted after the server has explicitly
    * acknowledged the operation ID.
    */
-  async removeAcknowledged(ids: string[]): Promise<void> {
+  async removeAcknowledged(
+    ids: string[],
+  ): Promise<void> {
     if (ids.length === 0) {
       return;
     }
@@ -280,8 +285,6 @@ export class SyncOutboxRepository {
 
   /**
    * Number of operations still waiting for server acknowledgement.
-   *
-   * This will later be useful for sync status UI and diagnostics.
    */
   async countPending(): Promise<number> {
     const db = await getDatabase();
@@ -300,9 +303,6 @@ export class SyncOutboxRepository {
 
   /**
    * Check whether an entity currently has local work waiting to sync.
-   *
-   * This can later help when deciding how remote mutable entity updates
-   * should be merged.
    */
   async hasPendingForEntity(
     entityType: SyncEntityType,
@@ -325,9 +325,193 @@ export class SyncOutboxRepository {
 
     return (result?.count ?? 0) > 0;
   }
+
+  /**
+   * Repair legacy queued payloads created before the
+   * current server sync contract.
+   *
+   * Important:
+   * - keeps the original operation ID
+   * - keeps the original entity ID
+   * - does not delete/re-enqueue operations
+   * - clears retry state after a successful repair
+   * - safe to run more than once
+   */
+  async repairLegacyPayloads(): Promise<number> {
+    const db = await getDatabase();
+
+    const rows = await db.getAllAsync<{
+      id: string;
+      operation_type: SyncOperationType;
+      payload: string;
+    }>(
+      `
+        SELECT
+          id,
+          operation_type,
+          payload
+        FROM sync_outbox
+        WHERE operation_type IN (
+          'ITEM_CREATE',
+          'LEDGER_ENTRY_CREATE'
+        )
+        ORDER BY created_at ASC
+      `,
+    );
+
+    let repairedCount = 0;
+
+    await db.withTransactionAsync(async () => {
+      for (const row of rows) {
+        let payload: any;
+
+        try {
+          payload = JSON.parse(row.payload);
+        } catch {
+          console.warn(
+            '[sync-outbox] invalid JSON payload',
+            row.id,
+          );
+
+          continue;
+        }
+
+        let changed = false;
+
+        /*
+         * Legacy ITEM_CREATE:
+         *
+         * {
+         *   item: {
+         *     id,
+         *     shopId,
+         *     name,
+         *     createdAt
+         *   }
+         * }
+         *
+         * Server also requires updatedAt.
+         */
+        if (
+          row.operation_type === 'ITEM_CREATE' &&
+          payload?.item
+        ) {
+          if (
+            !payload.item.updatedAt &&
+            payload.item.createdAt
+          ) {
+            payload.item.updatedAt =
+              payload.item.createdAt;
+
+            changed = true;
+          }
+        }
+
+        /*
+         * Legacy LEDGER_ENTRY_CREATE item:
+         *
+         * {
+         *   id,
+         *   itemId,
+         *   name
+         * }
+         *
+         * Server requires:
+         *
+         * {
+         *   id,
+         *   ledgerEntryId,
+         *   itemId,
+         *   itemName,
+         *   createdAt
+         * }
+         */
+        if (
+          row.operation_type ===
+            'LEDGER_ENTRY_CREATE' &&
+          payload?.entry &&
+          Array.isArray(payload.items)
+        ) {
+          payload.items = payload.items.map(
+            (item: any) => {
+              const repairedItem = {
+                ...item,
+              };
+
+              if (
+                !repairedItem.ledgerEntryId
+              ) {
+                repairedItem.ledgerEntryId =
+                  payload.entry.id;
+
+                changed = true;
+              }
+
+              if (
+                !repairedItem.itemName &&
+                repairedItem.name
+              ) {
+                repairedItem.itemName =
+                  repairedItem.name;
+
+                changed = true;
+              }
+
+              if (!repairedItem.createdAt) {
+                repairedItem.createdAt =
+                  payload.entry.createdAt;
+
+                changed = true;
+              }
+
+              /*
+               * The server rejects unknown "name"
+               * because the wire field is itemName.
+               */
+              if ('name' in repairedItem) {
+                delete repairedItem.name;
+                changed = true;
+              }
+
+              return repairedItem;
+            },
+          );
+        }
+
+        if (!changed) {
+          continue;
+        }
+
+        await db.runAsync(
+          `
+            UPDATE sync_outbox
+            SET
+              payload = ?,
+              next_attempt_at = NULL,
+              last_error = NULL
+            WHERE id = ?
+          `,
+          JSON.stringify(payload),
+          row.id,
+        );
+
+        repairedCount += 1;
+
+        console.log(
+          '[sync-outbox] repaired',
+          row.id,
+          row.operation_type,
+        );
+      }
+    });
+
+    return repairedCount;
+  }
 }
 
-function mapRow(row: SyncOutboxRow): SyncOutboxRecord {
+function mapRow(
+  row: SyncOutboxRow,
+): SyncOutboxRecord {
   return {
     id: row.id,
 
@@ -350,4 +534,5 @@ function mapRow(row: SyncOutboxRow): SyncOutboxRecord {
   };
 }
 
-export const syncOutboxRepository = new SyncOutboxRepository();
+export const syncOutboxRepository =
+  new SyncOutboxRepository();
