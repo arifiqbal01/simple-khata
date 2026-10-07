@@ -132,9 +132,18 @@ export class CreateUdhaarService {
           entityId: entry.id,
 
           payload: {
-            entry,
-            items: syncItems,
-          },
+              entry: {
+                id: entry.id,
+                customerId: entry.customer_id,
+                deviceId: entry.device_id,
+                type: entry.type,
+                amount: entry.amount,
+                note: entry.note,
+                occurredAt: entry.occurred_at,
+                createdAt: entry.created_at,
+              },
+              items: syncItems,
+            },
 
           createdAt: now,
         });

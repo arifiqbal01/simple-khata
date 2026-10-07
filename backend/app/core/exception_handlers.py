@@ -10,6 +10,13 @@ def register_exception_handlers(app: FastAPI) -> None:
         request: Request,
         exc: AppException,
     ) -> JSONResponse:
+        print(
+            f"[app-error] {exc.status_code} "
+            f"{request.method} {request.url.path}: "
+            f"{exc.message}",
+            flush=True,
+        )
+
         return JSONResponse(
             status_code=exc.status_code,
             content={

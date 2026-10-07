@@ -84,9 +84,18 @@ export class RecordPaymentService {
           entityId: entry.id,
 
           payload: {
-            entry,
-            items: [],
-          },
+              entry: {
+                id: entry.id,
+                customerId: entry.customer_id,
+                deviceId: entry.device_id,
+                type: entry.type,
+                amount: entry.amount,
+                note: entry.note,
+                occurredAt: entry.occurred_at,
+                createdAt: entry.created_at,
+              },
+              items: [],
+            },
 
           createdAt: now,
         }

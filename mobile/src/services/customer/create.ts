@@ -85,8 +85,15 @@ export class CreateCustomerService {
           entityId: customer.id,
 
           payload: {
-            customer,
-          },
+              customer: {
+                id: customer.id,
+                shopId: customer.shop_id,
+                name: customer.name,
+                phone: customer.phone,
+                createdAt: customer.created_at,
+                updatedAt: customer.updated_at,
+              },
+            },
 
           createdAt: now,
         }

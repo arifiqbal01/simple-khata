@@ -76,11 +76,14 @@ export class CreateItemService {
           entityId: item.id,
 
           payload: {
-            item: {
-              ...item,
-              updatedAt: now,
+              item: {
+                id: item.id,
+                shopId: item.shop_id,
+                name: item.name,
+                createdAt: item.created_at,
+                updatedAt: now,
+              },
             },
-          },
 
           createdAt: now,
         }
