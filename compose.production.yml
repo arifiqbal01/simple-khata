@@ -1,0 +1,7 @@
+
+services:
+  api:
+    env_file: !override
+      - .env.production
+    depends_on: !reset []
+    ports: !reset []
