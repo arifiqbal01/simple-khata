@@ -1,3 +1,4 @@
+
 import '../../global.css';
 
 import {
@@ -7,20 +8,26 @@ import {
   SplineSans_700Bold,
   useFonts,
 } from '@expo-google-fonts/spline-sans';
+
 import {
   DefaultTheme,
   ThemeProvider,
 } from '@react-navigation/native';
+
 import { Stack } from 'expo-router';
+
 import React, {
   useEffect,
   useState,
 } from 'react';
+
 import {
   ActivityIndicator,
   View,
 } from 'react-native';
 
+import Toast from 'react-native-toast-message';
+import { toastConfig } from '@/components/ui/toastConfig';
 import { runMigrations } from '@/db/migrations';
 import SyncLifecycle from '@/services/sync/SyncLifecycle';
 
@@ -122,6 +129,9 @@ export default function RootLayout() {
           }}
         />
       </Stack>
+
+      {/* Global toast notifications */}
+      <Toast config={toastConfig} topOffset={55} />
     </ThemeProvider>
   );
 }

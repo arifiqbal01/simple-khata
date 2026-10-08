@@ -39,6 +39,8 @@ export interface LedgerEntry {
   note: string | null;
   occurred_at: string;
   created_at: string;
+  deleted_at: string | null;
+  deleted_by_device_id: string | null;
 }
 
 export interface EntryItem {

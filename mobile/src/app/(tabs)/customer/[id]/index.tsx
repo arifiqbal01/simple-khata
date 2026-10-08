@@ -1,26 +1,28 @@
-import React, {
-  useCallback,
-  useEffect,
-  useMemo,
-  useState,
-} from 'react';
+
+import React, { useMemo } from 'react';
+
 import {
   ActivityIndicator,
   SectionList,
   View,
 } from 'react-native';
+
 import { Ionicons } from '@expo/vector-icons';
+
 import {
   router,
-  useFocusEffect,
   useLocalSearchParams,
 } from 'expo-router';
+
+import Toast from 'react-native-toast-message';
 
 import {
   BalanceSummary,
   LedgerRow,
 } from '@/components/ledger';
+
 import { AppHeader } from '@/components/layout';
+
 import {
   AppText,
   Button,
@@ -28,31 +30,22 @@ import {
   Screen,
   SectionLabel,
 } from '@/components/ui';
-import { CustomerRepository } from '@/repositories/customer';
-import {
-  LedgerRepository,
-  type LedgerHistoryEntry,
+
+import { ConfirmModal } from '@/components/ui/ConfirmModal';
+
+import type {
+  LedgerHistoryEntry,
 } from '@/repositories/ledger';
-import { ShopRepository } from '@/repositories/shop';
-import { GetCustomerBalanceService } from '@/services/ledger/get-balance';
-import { GetLedgerHistoryService } from '@/services/ledger/get-history';
-import type { Customer } from '@/types/domain';
 
-const customerRepository = new CustomerRepository();
-const ledgerRepository = new LedgerRepository();
-const shopRepository = new ShopRepository();
+import {
+  useCustomerLedger,
+} from '@/hooks/ledger/useCustomerLedger';
 
-const getBalanceService =
-  new GetCustomerBalanceService(
-    ledgerRepository,
-    customerRepository
-  );
+import {
+  useDeleteLedgerEntry,
+} from '@/hooks/ledger/useDeleteLedgerEntry';
 
-const getHistoryService =
-  new GetLedgerHistoryService(
-    ledgerRepository,
-    customerRepository
-  );
+import { useConfirm } from '@/hooks/ui/useConfirm';
 
 interface LedgerSection {
   title: string;
@@ -73,174 +66,38 @@ export default function CustomerLedgerScreen() {
     ? params.from[0]
     : params.from;
 
-  const [shopId, setShopId] = useState<
-    string | null
-  >(null);
+  // Customer details, balance, history and refresh.
+  const {
+    shopId,
+    customer,
+    entries,
+    balance,
+    loading,
+    refreshing,
+    error,
+    reload,
+    refresh,
+  } = useCustomerLedger(customerId);
 
-  const [customer, setCustomer] =
-    useState<Customer | null>(null);
+  // Offline-first ledger deletion.
+  const {
+    deleteEntry,
+    isDeleting,
+  } = useDeleteLedgerEntry({
+    shopId,
+    onDeleted: reload,
+  });
 
-  const [entries, setEntries] = useState<
-    LedgerHistoryEntry[]
-  >([]);
-
-  const [balance, setBalance] = useState(0);
-
-  const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] =
-    useState(false);
-
-  const [error, setError] = useState<
-    string | null
-  >(null);
+  // Reusable confirmation modal.
+  const {
+    confirm,
+    confirmProps,
+  } = useConfirm();
 
   const sections = useMemo(
     () => groupLedgerEntries(entries),
     [entries]
   );
-
-  const loadLedger = useCallback(
-    async (
-      currentShopId: string,
-      showRefreshing = false
-    ) => {
-      if (!customerId) {
-        return;
-      }
-
-      if (showRefreshing) {
-        setRefreshing(true);
-      }
-
-      try {
-        setError(null);
-
-        const currentCustomer =
-          await customerRepository.getByIdAndShop(
-            customerId,
-            currentShopId
-          );
-
-        if (!currentCustomer) {
-          throw new Error(
-            `Customer not found: ${customerId}`
-          );
-        }
-
-        const [currentBalance, history] =
-          await Promise.all([
-            getBalanceService.execute({
-              shopId: currentShopId,
-              customerId,
-            }),
-
-            getHistoryService.execute({
-              shopId: currentShopId,
-              customerId,
-            }),
-          ]);
-
-        setCustomer(currentCustomer);
-        setBalance(currentBalance);
-        setEntries(history);
-      } catch (loadError) {
-        const message =
-          loadError instanceof Error
-            ? loadError.message
-            : 'Could not load customer ledger';
-
-        setError(message);
-
-        console.error(
-          'Failed to load customer ledger:',
-          loadError
-        );
-      } finally {
-        if (showRefreshing) {
-          setRefreshing(false);
-        }
-      }
-    },
-    [customerId]
-  );
-
-  useEffect(() => {
-    let cancelled = false;
-
-    async function initialize() {
-      try {
-        setLoading(true);
-        setError(null);
-
-        if (!customerId) {
-          throw new Error(
-            'Customer ID is missing'
-          );
-        }
-
-        const shop =
-          await shopRepository.getFirst();
-
-        if (!shop) {
-          throw new Error(
-            'Shop has not been initialized'
-          );
-        }
-
-        if (cancelled) {
-          return;
-        }
-
-        setShopId(shop.id);
-
-        await loadLedger(shop.id);
-      } catch (initializeError) {
-        if (cancelled) {
-          return;
-        }
-
-        const message =
-          initializeError instanceof Error
-            ? initializeError.message
-            : 'Could not initialize customer ledger';
-
-        setError(message);
-
-        console.error(
-          'Failed to initialize customer ledger:',
-          initializeError
-        );
-      } finally {
-        if (!cancelled) {
-          setLoading(false);
-        }
-      }
-    }
-
-    initialize();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [customerId, loadLedger]);
-
-  useFocusEffect(
-    useCallback(() => {
-      if (!shopId || loading) {
-        return;
-      }
-
-      loadLedger(shopId);
-    }, [shopId, loading, loadLedger])
-  );
-
-  async function handleRefresh() {
-    if (!shopId || refreshing) {
-      return;
-    }
-
-    await loadLedger(shopId, true);
-  }
 
   function handleBack() {
     if (from === 'customers') {
@@ -279,6 +136,80 @@ export default function CustomerLedgerScreen() {
         ledgerFrom: from ?? 'home',
       },
     });
+  }
+
+  function handleRefresh() {
+    void refresh().catch((refreshError) => {
+      console.error(
+        '[customer-ledger] refresh failed',
+        refreshError
+      );
+
+      Toast.show({
+        type: 'error',
+        text1: 'Refresh failed',
+        text2: 'Could not refresh ledger history.',
+      });
+    });
+  }
+
+  async function handleDelete(
+    entry: LedgerHistoryEntry
+  ) {
+    if (isDeleting) {
+      return;
+    }
+
+    const entryType =
+      entry.type === 'UDHAAR'
+        ? 'Udhaar'
+        : 'Payment';
+
+    const approved = await confirm({
+      title: 'Delete ledger entry?',
+      message:
+        `Are you sure you want to delete this ` +
+        `${entryType.toLowerCase()} entry of ` +
+        `Rs ${entry.amount.toLocaleString()}? ` +
+        'The customer balance will be updated.',
+      confirmText: 'Delete Entry',
+      cancelText: 'Cancel',
+      destructive: true,
+    });
+
+    if (!approved) {
+      return;
+    }
+
+    try {
+      await deleteEntry(entry);
+
+      Toast.show({
+        type: 'success',
+        text1: 'Entry deleted',
+        text2:
+          `${entryType} entry removed. ` +
+          'Customer balance updated.',
+        position: 'top',
+        visibilityTime: 3000,
+      });
+    } catch (deleteError) {
+      console.error(
+        '[customer-ledger] delete failed',
+        deleteError
+      );
+
+      Toast.show({
+        type: 'error',
+        text1: 'Delete failed',
+        text2:
+          deleteError instanceof Error
+            ? deleteError.message
+            : 'Could not delete the entry.',
+        position: 'top',
+        visibilityTime: 4000,
+      });
+    }
   }
 
   if (loading) {
@@ -383,7 +314,11 @@ export default function CustomerLedgerScreen() {
           </SectionLabel>
         )}
         renderItem={({ item }) => (
-          <LedgerRow entry={item} />
+          <LedgerRow
+            entry={item}
+            onDelete={handleDelete}
+            isDeleting={isDeleting}
+          />
         )}
         ListEmptyComponent={
           <EmptyState
@@ -394,6 +329,8 @@ export default function CustomerLedgerScreen() {
           />
         }
       />
+
+      <ConfirmModal {...confirmProps} />
     </Screen>
   );
 }

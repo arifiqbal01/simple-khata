@@ -23,6 +23,7 @@ class SyncOperationType(StrEnum):
     ITEM_CREATE = "ITEM_CREATE"
     ITEM_UPDATE = "ITEM_UPDATE"
     LEDGER_ENTRY_CREATE = "LEDGER_ENTRY_CREATE"
+    LEDGER_ENTRY_DELETE = "LEDGER_ENTRY_DELETE"
 
 
 class LedgerEntryType(StrEnum):
@@ -44,6 +45,13 @@ class CustomerSyncData(BaseModel):
     phone: str | None = None
     createdAt: datetime
     updatedAt: datetime
+
+class LedgerEntryDeleteData(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: UUID
+    deletedAt: datetime
+    deletedByDeviceId: UUID
 
 
 class ItemSyncData(BaseModel):
@@ -104,6 +112,11 @@ class LedgerEntryPayload(BaseModel):
     items: list[EntryItemSyncData] = Field(
         default_factory=list
     )
+
+class LedgerEntryDeletePayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    entry: LedgerEntryDeleteData
 
 
 # ---------------------------------------------------------------------------
@@ -185,13 +198,28 @@ class LedgerEntryCreateOperation(BaseModel):
     createdAt: datetime
     payload: LedgerEntryPayload
 
+class LedgerEntryDeleteOperation(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: UUID
+    operationType: Literal[
+        SyncOperationType.LEDGER_ENTRY_DELETE
+    ]
+    entityType: Literal[
+        SyncEntityType.LEDGER_ENTRY
+    ]
+    entityId: UUID
+    createdAt: datetime
+    payload: LedgerEntryDeletePayload
+
 
 SyncPushOperation = Annotated[
     CustomerCreateOperation
     | CustomerUpdateOperation
     | ItemCreateOperation
     | ItemUpdateOperation
-    | LedgerEntryCreateOperation,
+    | LedgerEntryCreateOperation
+    | LedgerEntryDeleteOperation,
     Field(discriminator="operationType"),
 ]
 
@@ -236,6 +264,7 @@ class SyncChange(BaseModel):
         CustomerPayload
         | ItemPayload
         | LedgerEntryPayload
+        | LedgerEntryDeletePayload
     )
     createdAt: datetime
 

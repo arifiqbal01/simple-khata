@@ -67,9 +67,17 @@ class LedgerEntryRead(BaseModel):
     note: str | None
     occurred_at: datetime
     created_at: datetime
+
+    deleted_at: datetime | None
+    deleted_by_device_id: UUID | None
+
     items: list[EntryItemRead] = Field(default_factory=list)
 
 
 class CustomerBalanceRead(BaseModel):
     customer_id: UUID
     balance: int
+
+class LedgerEntryDelete(BaseModel):
+    device_id: UUID
+    deleted_at: datetime

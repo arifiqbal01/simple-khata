@@ -157,28 +157,30 @@ export class LedgerRepository {
   }
 
   async getById(
-    entryId: string
-  ): Promise<LedgerEntry | null> {
-    const db = await getDatabase();
+  entryId: string
+): Promise<LedgerEntry | null> {
+  const db = await getDatabase();
 
-    return db.getFirstAsync<LedgerEntry>(
-      `
-        SELECT
-          id,
-          customer_id,
-          device_id,
-          type,
-          amount,
-          note,
-          occurred_at,
-          created_at
-        FROM ledger_entries
-        WHERE id = ?
-        LIMIT 1
-      `,
-      entryId
-    );
-  }
+  return db.getFirstAsync<LedgerEntry>(
+    `
+      SELECT
+        id,
+        customer_id,
+        device_id,
+        type,
+        amount,
+        note,
+        occurred_at,
+        created_at,
+        deleted_at,
+        deleted_by_device_id
+      FROM ledger_entries
+      WHERE id = ?
+      LIMIT 1
+    `,
+    entryId
+  );
+}
 
   async listByCustomer(
     shopId: string,
@@ -199,6 +201,8 @@ export class LedgerRepository {
           le.note,
           le.occurred_at,
           le.created_at,
+          le.deleted_at,
+          le.deleted_by_device_id,
 
           (
             SELECT GROUP_CONCAT(
@@ -217,6 +221,7 @@ export class LedgerRepository {
         WHERE
           le.customer_id = ?
           AND c.shop_id = ?
+          AND le.deleted_at IS NULL
 
         ORDER BY
           le.occurred_at DESC,
@@ -232,6 +237,30 @@ export class LedgerRepository {
       offset
     );
   }
+
+
+  async softDeleteWithDatabase(
+  db: SQLiteDatabase,
+  entryId: string,
+  deviceId: string,
+  deletedAt: string
+): Promise<boolean> {
+  const result = await db.runAsync(
+    `
+      UPDATE ledger_entries
+      SET
+        deleted_at = ?,
+        deleted_by_device_id = ?
+      WHERE id = ?
+        AND deleted_at IS NULL
+    `,
+    deletedAt,
+    deviceId,
+    entryId
+  );
+
+  return result.changes === 1;
+}
 
   async getCustomerBalance(
     shopId: string,
@@ -262,8 +291,9 @@ export class LedgerRepository {
             ON c.id = le.customer_id
 
           WHERE
-            le.customer_id = ?
-            AND c.shop_id = ?
+              le.customer_id = ?
+              AND c.shop_id = ?
+              AND le.deleted_at IS NULL
         `,
         customerId,
         shopId

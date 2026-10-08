@@ -40,4 +40,5 @@ class Device(UUIDPrimaryKeyMixin, CreatedAtMixin, Base):
 
     ledger_entries: Mapped[list["LedgerEntry"]] = relationship(
         back_populates="device",
+        foreign_keys="LedgerEntry.device_id",
     )

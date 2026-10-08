@@ -101,8 +101,22 @@ export function requestSync(): Promise<SyncNowResult> {
       return result;
     })
     .catch(async (error) => {
-      const pendingCount =
-        await syncOutboxRepository.countPending();
+      console.error(
+        '[sync-coordinator] sync failed:',
+        error
+      );
+
+      let pendingCount = syncState.pendingCount;
+
+      try {
+        pendingCount =
+          await syncOutboxRepository.countPending();
+      } catch (countError) {
+        console.error(
+          '[sync-coordinator] failed to count pending operations:',
+          countError
+        );
+      }
 
       const message =
         error instanceof Error

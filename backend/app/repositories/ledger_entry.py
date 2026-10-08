@@ -62,6 +62,7 @@ class LedgerEntryRepository:
             .options(selectinload(LedgerEntry.items))
             .where(
                 LedgerEntry.customer_id == customer_id,
+                LedgerEntry.deleted_at.is_(None),
             )
             .order_by(
                 LedgerEntry.occurred_at.desc(),
@@ -96,7 +97,22 @@ class LedgerEntryRepository:
             )
             .where(
                 LedgerEntry.customer_id == customer_id,
+                LedgerEntry.deleted_at.is_(None),
             )
         )
 
         return int(self.db.scalar(statement) or 0)
+
+    def soft_delete(
+            self,
+            *,
+            entry: LedgerEntry,
+            deleted_at: datetime,
+            deleted_by_device_id: UUID,
+    ) -> LedgerEntry:
+        entry.deleted_at = deleted_at
+        entry.deleted_by_device_id = deleted_by_device_id
+
+        self.db.flush()
+
+        return entry

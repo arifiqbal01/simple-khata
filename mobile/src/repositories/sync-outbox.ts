@@ -12,7 +12,8 @@ export type SyncOperationType =
   | 'CUSTOMER_UPDATE'
   | 'ITEM_CREATE'
   | 'ITEM_UPDATE'
-  | 'LEDGER_ENTRY_CREATE';
+  | 'LEDGER_ENTRY_CREATE'
+  | 'LEDGER_ENTRY_DELETE';
 
 export interface SyncOutboxRecord {
   id: string;
@@ -148,40 +149,51 @@ export class SyncOutboxRepository {
    * Failed operations become eligible again once their retry time arrives.
    */
   async getPending(
-    limit: number,
-    now: string,
-  ): Promise<SyncOutboxRecord[]> {
-    const db = await getDatabase();
+  limit: number,
+  now: string
+): Promise<SyncOutboxRecord[]> {
+  const db = await getDatabase();
 
-    const rows =
-      await db.getAllAsync<SyncOutboxRow>(
-        `
-          SELECT
-            id,
-            shop_id,
-            device_id,
-            operation_type,
-            entity_type,
-            entity_id,
-            payload,
-            attempt_count,
-            next_attempt_at,
-            last_attempt_at,
-            last_error,
-            created_at
-          FROM sync_outbox
-          WHERE
-            next_attempt_at IS NULL
-            OR next_attempt_at <= ?
-          ORDER BY created_at ASC
-          LIMIT ?
-        `,
-        now,
-        limit,
-      );
+  // Fetch the oldest operations first, regardless of retry eligibility.
+  // This prevents a later DELETE from overtaking an earlier CREATE.
+  const rows = await db.getAllAsync<SyncOutboxRow>(
+    `
+      SELECT
+        id,
+        shop_id,
+        device_id,
+        operation_type,
+        entity_type,
+        entity_id,
+        payload,
+        attempt_count,
+        next_attempt_at,
+        last_attempt_at,
+        last_error,
+        created_at
+      FROM sync_outbox
+      ORDER BY rowid ASC
+      LIMIT ?
+    `,
+    limit
+  );
 
-    return rows.map(mapRow);
+  const eligible: SyncOutboxRow[] = [];
+
+  for (const row of rows) {
+    // Stop at the first operation still waiting for retry.
+    if (
+      row.next_attempt_at !== null &&
+      row.next_attempt_at > now
+    ) {
+      break;
+    }
+
+    eligible.push(row);
   }
+
+  return eligible.map(mapRow);
+}
 
   /**
    * Remove operations acknowledged by the server.

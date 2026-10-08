@@ -10,7 +10,17 @@ export type SyncOperationType =
   | 'CUSTOMER_UPDATE'
   | 'ITEM_CREATE'
   | 'ITEM_UPDATE'
-  | 'LEDGER_ENTRY_CREATE';
+  | 'LEDGER_ENTRY_CREATE'
+  | 'LEDGER_ENTRY_DELETE';
+
+
+export interface LedgerEntryDeletePayload {
+  entry: {
+    id: string;
+    deletedAt: string;
+    deletedByDeviceId: string;
+  };
+}
 
 export interface SyncPushOperation {
   id: string;

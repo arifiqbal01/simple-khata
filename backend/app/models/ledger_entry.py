@@ -70,12 +70,25 @@ class LedgerEntry(UUIDPrimaryKeyMixin, CreatedAtMixin, Base):
         nullable=False,
     )
 
+    deleted_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+
+    deleted_by_device_id: Mapped[UUID | None] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("devices.id"),
+        nullable=True,
+        index=True,
+    )
+
     customer: Mapped["Customer"] = relationship(
         back_populates="ledger_entries",
     )
 
     device: Mapped["Device"] = relationship(
         back_populates="ledger_entries",
+        foreign_keys=[device_id],
     )
 
     items: Mapped[list["EntryItem"]] = relationship(

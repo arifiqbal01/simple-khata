@@ -1,3 +1,4 @@
+
 import { getDatabase } from '@/db/database';
 import type { SQLiteDatabase } from 'expo-sqlite';
 import type { Customer } from '@/types/domain';
@@ -222,6 +223,7 @@ export class CustomerRepository {
 
           LEFT JOIN ledger_entries le
             ON le.customer_id = c.id
+            AND le.deleted_at IS NULL
 
           WHERE
             c.shop_id = ?

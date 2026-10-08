@@ -1,7 +1,7 @@
 // src/sync/pull.ts
 
 import type { SQLiteDatabase } from 'expo-sqlite';
-
+import { Platform } from 'react-native';
 import { getDatabase } from '@/db/database';
 import { syncStateRepository } from '@/repositories/sync-state';
 
@@ -55,6 +55,14 @@ interface LedgerEntrySyncPayload {
   }>;
 }
 
+interface LedgerEntryDeletePayload {
+  entry: {
+    id: string;
+    deletedAt: string;
+    deletedByDeviceId: string;
+  };
+}
+
 export interface PullRemoteChangesInput {
   shopId: string;
   deviceId: string;
@@ -65,21 +73,21 @@ export interface PullRemoteChangesResult {
   cursor: number;
 }
 
+
 export async function pullRemoteChanges({
   shopId,
   deviceId,
 }: PullRemoteChangesInput): Promise<PullRemoteChangesResult> {
   const db = await getDatabase();
 
-  let cursor =
-    await syncStateRepository.getPullCursor(
-      shopId
-    );
+  let cursor = await syncStateRepository.getPullCursor(shopId);
 
   let totalPulled = 0;
   let hasMore = true;
 
   while (hasMore) {
+    console.log('[pull] requesting changes', { cursor });
+
     const response = await pullSync({
       shopId,
       deviceId,
@@ -87,37 +95,58 @@ export async function pullRemoteChanges({
       limit: PULL_BATCH_SIZE,
     });
 
-    await db.withTransactionAsync(async () => {
+    console.log('[pull] response received', {
+      changes: response.changes.length,
+      nextCursor: response.nextCursor,
+      hasMore: response.hasMore,
+    });
+
+    const applyBatch = async (tx: SQLiteDatabase): Promise<void> => {
       for (const change of response.changes) {
-        await applyRemoteChange(
-          db,
-          shopId,
-          change
-        );
+        await applyRemoteChange(tx, shopId, change);
       }
 
-      /*
-       * Cursor advancement is part of the same SQLite
-       * transaction as applying the remote changes.
-       */
+      // Commit the cursor together with the applied changes.
       await syncStateRepository.setPullCursorWithDatabase(
-        db,
+        tx,
         shopId,
         response.nextCursor
       );
+    };
+
+    console.log('[pull] applying changes', {
+      platform: Platform.OS,
+    });
+
+    if (Platform.OS === 'web') {
+      // Expo SQLite Web does not support exclusive transactions.
+      await db.withTransactionAsync(async () => {
+        await applyBatch(db);
+      });
+    } else {
+      await db.withExclusiveTransactionAsync(applyBatch);
+    }
+
+    console.log('[pull] batch committed', {
+      nextCursor: response.nextCursor,
     });
 
     totalPulled += response.changes.length;
-
     cursor = response.nextCursor;
     hasMore = response.hasMore;
   }
+
+  console.log('[pull] completed', {
+    pulled: totalPulled,
+    cursor,
+  });
 
   return {
     pulled: totalPulled,
     cursor,
   };
 }
+
 
 async function applyRemoteChange(
   db: SQLiteDatabase,
@@ -145,6 +174,14 @@ async function applyRemoteChange(
 
     case 'LEDGER_ENTRY_CREATE':
       await applyLedgerEntryChange(
+        db,
+        shopId,
+        change
+      );
+      return;
+
+    case 'LEDGER_ENTRY_DELETE':
+      await applyLedgerEntryDeleteChange(
         db,
         shopId,
         change
@@ -393,4 +430,110 @@ async function applyLedgerEntryChange(
       item.amount
     );
   }
+}
+
+
+async function applyLedgerEntryDeleteChange(
+  db: SQLiteDatabase,
+  shopId: string,
+  change: SyncChange
+): Promise<void> {
+  const payload =
+    change.payload as LedgerEntryDeletePayload;
+
+  const entry = payload.entry;
+
+  if (!entry?.id || !entry.deletedAt || !entry.deletedByDeviceId) {
+    throw new Error('Invalid remote ledger deletion payload');
+  }
+
+  if (change.entityType !== 'LEDGER_ENTRY') {
+    throw new Error('Invalid remote ledger deletion entity type');
+  }
+
+  if (change.entityId !== entry.id) {
+    throw new Error('Remote ledger deletion ID mismatch');
+  }
+
+  // Verify the ledger entry belongs to this shop.
+  const existingEntry = await db.getFirstAsync<{
+    id: string;
+    deleted_at: string | null;
+  }>(
+    `
+      SELECT
+        le.id,
+        le.deleted_at
+      FROM ledger_entries AS le
+      INNER JOIN customers AS c
+        ON c.id = le.customer_id
+      WHERE le.id = ?
+        AND c.shop_id = ?
+      LIMIT 1
+    `,
+    entry.id,
+    shopId
+  );
+
+  if (!existingEntry) {
+    // A deletion should follow its creation in the
+    // server change stream. Do not silently skip it.
+    throw new Error(
+      `Remote ledger entry not found for deletion: ${entry.id}`
+    );
+  }
+
+  // Preserve the existing tombstone if already deleted.
+  if (existingEntry.deleted_at !== null) {
+    return;
+  }
+
+  // The deleting device may be different from the
+  // device that originally created this entry.
+  const existingDevice = await db.getFirstAsync<{
+    id: string;
+  }>(
+    `
+      SELECT id
+      FROM devices
+      WHERE id = ?
+        AND shop_id = ?
+      LIMIT 1
+    `,
+    entry.deletedByDeviceId,
+    shopId
+  );
+
+  if (!existingDevice) {
+    await db.runAsync(
+      `
+        INSERT INTO devices (
+          id,
+          shop_id,
+          name,
+          last_sync_at,
+          created_at
+        )
+        VALUES (?, ?, ?, NULL, ?)
+      `,
+      entry.deletedByDeviceId,
+      shopId,
+      'Remote device',
+      entry.deletedAt
+    );
+  }
+
+  await db.runAsync(
+    `
+      UPDATE ledger_entries
+      SET
+        deleted_at = ?,
+        deleted_by_device_id = ?
+      WHERE id = ?
+        AND deleted_at IS NULL
+    `,
+    entry.deletedAt,
+    entry.deletedByDeviceId,
+    entry.id
+  );
 }

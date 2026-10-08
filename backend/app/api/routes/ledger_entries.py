@@ -13,12 +13,14 @@ from app.repositories.item import ItemRepository
 from app.repositories.ledger_entry import LedgerEntryRepository
 from app.schemas.ledger_entry import (
     CustomerBalanceRead,
+    LedgerEntryDelete,
     LedgerEntryRead,
     PaymentCreate,
     UdhaarCreate,
 )
 from app.services.ledger import (
     CreateUdhaarService,
+    DeleteLedgerEntryService,
     GetCustomerBalanceService,
     GetLedgerHistoryService,
     RecordPaymentService,
@@ -128,4 +130,28 @@ def get_customer_balance(
     return CustomerBalanceRead(
         customer_id=customer_id,
         balance=balance,
+    )
+
+@router.delete(
+    "/ledger/{entry_id}",
+    response_model=LedgerEntryRead,
+)
+def delete_ledger_entry(
+    entry_id: UUID,
+    data: LedgerEntryDelete,
+    shop_id: UUID = Depends(get_shop_id),
+    db: Session = Depends(get_db),
+) -> LedgerEntry:
+    service = DeleteLedgerEntryService(
+        db=db,
+        ledger_repository=LedgerEntryRepository(db),
+        customer_repository=CustomerRepository(db),
+        device_repository=DeviceRepository(db),
+    )
+
+    return service.execute(
+        shop_id=shop_id,
+        entry_id=entry_id,
+        device_id=data.device_id,
+        deleted_at=data.deleted_at,
     )
