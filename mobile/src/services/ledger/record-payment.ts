@@ -47,6 +47,8 @@ export class RecordPaymentService {
       note: null,
       occurred_at: input.occurredAt ?? now,
       created_at: now,
+      deleted_at: null,
+      deleted_by_device_id: null,
     };
 
     const operationId = Crypto.randomUUID();

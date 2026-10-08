@@ -1,8 +1,6 @@
+
 import React from 'react';
-import {
-  Pressable,
-  View,
-} from 'react-native';
+import { Pressable, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 
 import { AppText } from '@/components/ui';
@@ -36,10 +34,11 @@ export function CustomerRow({
         ${!last ? 'border-b' : ''}
       `}
     >
+      {/* LEFT: Open customer details */}
       <Pressable
-        onPress={onQuickUdhaar}
+        onPress={onOpenCustomer}
         accessibilityRole="button"
-        accessibilityLabel={`Add udhaar for ${customer.name}`}
+        accessibilityLabel={`Open ${customer.name} khata`}
         className="
           min-w-0
           flex-1
@@ -72,16 +71,15 @@ export function CustomerRow({
             text-muted
           "
         >
-          {formatActivity(
-            customer.last_activity_at
-          )}
+          {formatActivity(customer.last_activity_at)}
         </AppText>
       </Pressable>
 
+      {/* RIGHT: Add Udhaar */}
       <Pressable
-        onPress={onOpenCustomer}
+        onPress={onQuickUdhaar}
         accessibilityRole="button"
-        accessibilityLabel={`Open ${customer.name} khata`}
+        accessibilityLabel={`Add udhaar for ${customer.name}`}
         className="
           flex-row
           items-center
@@ -114,9 +112,7 @@ export function CustomerRow({
   );
 }
 
-function formatActivity(
-  value: string | null
-): string {
+function formatActivity(value: string | null): string {
   if (!value) {
     return 'No activity yet';
   }

@@ -4,7 +4,7 @@ import { View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import type { ToastConfig } from 'react-native-toast-message';
 
-import { AppText } from '@/components/ui';
+import { AppText } from './AppText';
 
 type ToastVariant = 'success' | 'error' | 'info';
 

@@ -45,3 +45,9 @@ export { SectionLabel } from './SectionLabel';
 export type { SectionLabelProps } from './SectionLabel';
 export { SyncStatusBadge } from './SyncStatusBadge';
 export type { SyncStatusBadgeProps } from './SyncStatusBadge';
+
+export { SaveButton } from './SaveButton';
+export type { SaveButtonProps } from './SaveButton';
+
+export { ConfirmModal } from './ConfirmModal';
+export type { ConfirmModalProps } from './ConfirmModal';

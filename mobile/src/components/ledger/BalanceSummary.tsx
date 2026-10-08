@@ -1,7 +1,9 @@
+
 import React from 'react';
 import { View } from 'react-native';
 
 import { AppText } from '@/components/ui';
+import { formatRupees } from '@/utils/ledger/format-rupees';
 
 export interface BalanceSummaryProps {
   balance: number;
@@ -53,7 +55,7 @@ export function BalanceSummary({
             }
           `}
         >
-          {balance.toLocaleString()}
+          {formatRupees(balance)}
         </AppText>
       </View>
     </View>

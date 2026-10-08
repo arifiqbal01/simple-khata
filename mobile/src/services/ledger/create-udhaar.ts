@@ -1,4 +1,5 @@
-import { getDatabase } from '@/db/database';
+
+import { runWriteTransaction } from '@/db/write-transaction';
 import { CustomerRepository } from '@/repositories/customer';
 import {
   LedgerRepository,
@@ -80,6 +81,8 @@ export class CreateUdhaarService {
       note: input.note ?? null,
       occurred_at: occurredAt,
       created_at: now,
+      deleted_at: null,
+      deleted_by_device_id: null,
     };
 
     /*
@@ -96,13 +99,14 @@ export class CreateUdhaarService {
 
     const operationId = Crypto.randomUUID();
 
-    const db = await getDatabase();
-
     /*
      * Domain mutation + outbox enqueue are one atomic
      * local transaction.
+     *
+     * The shared coordinator prevents overlap with
+     * other transactions using runWriteTransaction().
      */
-    await db.withTransactionAsync(async () => {
+    await runWriteTransaction(async (db) => {
       await this.ledgerRepository
         .createUdhaarWithItemsWithDatabase(
           db,
@@ -132,18 +136,18 @@ export class CreateUdhaarService {
           entityId: entry.id,
 
           payload: {
-              entry: {
-                id: entry.id,
-                customerId: entry.customer_id,
-                deviceId: entry.device_id,
-                type: entry.type,
-                amount: entry.amount,
-                note: entry.note,
-                occurredAt: entry.occurred_at,
-                createdAt: entry.created_at,
-              },
-              items: syncItems,
+            entry: {
+              id: entry.id,
+              customerId: entry.customer_id,
+              deviceId: entry.device_id,
+              type: entry.type,
+              amount: entry.amount,
+              note: entry.note,
+              occurredAt: entry.occurred_at,
+              createdAt: entry.created_at,
             },
+            items: syncItems,
+          },
 
           createdAt: now,
         });

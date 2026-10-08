@@ -1,539 +1,160 @@
+
 import React, {
+  useCallback,
   useEffect,
+  useRef,
   useState,
 } from 'react';
+
 import {
   ActivityIndicator,
-  Alert,
+  Keyboard,
   KeyboardAvoidingView,
   Platform,
   Pressable,
   ScrollView,
   View,
 } from 'react-native';
+
 import {
   router,
   useLocalSearchParams,
 } from 'expo-router';
+
 import { Ionicons } from '@expo/vector-icons';
-import * as Crypto from "expo-crypto";
-import { AppHeader } from '@/components/layout';
+import Toast from 'react-native-toast-message';
+
 import {
   AppText,
-  Button,
-  Chip,
   MoneyInput,
   Screen,
-  TextField,
+  SaveButton,
 } from '@/components/ui';
 
-import { CustomerRepository } from '@/repositories/customer';
-import { ItemRepository } from '@/repositories/item';
-import { LedgerRepository } from '@/repositories/ledger';
-import { LocalIdentityRepository } from '@/repositories/local-identity';
-import {
-  syncOutboxRepository,
-} from '@/repositories/sync-outbox';
+import { QuickItems } from '@/components/ledger/udhaar/QuickItems';
+import { SelectedItems } from '@/components/ledger/udhaar/SelectedItems';
+import { ItemSearchFields } from '@/components/ledger/udhaar/ItemSearchFields';
 
-import { CreateItemService } from '@/services/item/create';
-import { SearchItemsService } from '@/services/item/search';
-import { GetCustomerBalanceService } from '@/services/ledger/get-balance';
-import {
-  CreateUdhaarService,
-  type CreateUdhaarItemInput,
-} from '@/services/ledger/create-udhaar';
-
-import type {
-  Customer,
-  Item,
-} from '@/types/domain';
-
-const customerRepository =
-  new CustomerRepository();
-
-const itemRepository =
-  new ItemRepository();
-
-const ledgerRepository =
-  new LedgerRepository();
-
-const localIdentityRepository =
-  new LocalIdentityRepository();
-
-const createItemService =
-  new CreateItemService(
-    itemRepository,
-    syncOutboxRepository
-  );
-
-const searchItemsService =
-  new SearchItemsService(
-    itemRepository
-  );
-
-const createUdhaarService =
-  new CreateUdhaarService(
-    ledgerRepository,
-    customerRepository,
-    syncOutboxRepository
-  );
-
-const getCustomerBalanceService =
-  new GetCustomerBalanceService(
-    ledgerRepository,
-    customerRepository
-  );
-
-interface DraftItem {
-  id: string;
-  itemId: string | null;
-  name: string;
-}
-
-function createDraftItem(): DraftItem {
-  return {
-    id: Crypto.randomUUID(),
-    itemId: null,
-    name: '',
-  };
-}
+import { useAddUdhaar } from '@/hooks/ledger/useAddUdhaar';
 
 export default function AddUdhaarScreen() {
   const params = useLocalSearchParams<{
     id?: string | string[];
-    from?: string | string[];
-    ledgerFrom?: string | string[];
   }>();
 
   const customerId = Array.isArray(params.id)
     ? params.id[0]
     : params.id;
 
-  const from = Array.isArray(params.from)
-    ? params.from[0]
-    : params.from;
+  const {
+    customer,
+    balance,
+    amount,
+    setAmount,
 
-  const ledgerFrom = Array.isArray(
-    params.ledgerFrom
-  )
-    ? params.ledgerFrom[0]
-    : params.ledgerFrom;
-
-  const [shopId, setShopId] = useState<
-    string | null
-  >(null);
-
-  const [deviceId, setDeviceId] = useState<
-    string | null
-  >(null);
-
-  const [customer, setCustomer] =
-    useState<Customer | null>(null);
-
-  const [balance, setBalance] =
-    useState(0);
-
-  const [amount, setAmount] =
-    useState('');
-
-  const [useItems, setUseItems] =
-    useState(false);
-
-  const [items, setItems] = useState<
-    DraftItem[]
-  >([]);
-
-  const [
+    items,
     availableItems,
-    setAvailableItems,
-  ] = useState<Item[]>([]);
+    quickItems,
+    selectedItems,
+    draftItems,
 
-  const [loading, setLoading] =
-    useState(true);
+    loading,
+    saving,
+    error,
+    validAmount,
+    parsedAmount,
 
-  const [saving, setSaving] =
+    addItemRow,
+    removeItem,
+    clearItems,
+    changeItemName,
+    selectItem,
+    toggleQuickItem,
+
+    save,
+    confirmItem,
+  } = useAddUdhaar(customerId);
+
+  const scrollRef = useRef<ScrollView>(null);
+
+  const [keyboardVisible, setKeyboardVisible] =
     useState(false);
 
   useEffect(() => {
-    let cancelled = false;
-
-    async function initialize() {
-  try {
-    if (!customerId) {
-      throw new Error(
-        'Customer ID is missing'
-      );
-    }
-
-    const identity =
-      await localIdentityRepository.get();
-
-    if (!identity) {
-      throw new Error(
-        'Local installation identity not found'
-      );
-    }
-
-    const currentCustomer =
-      await customerRepository.getByIdAndShop(
-        customerId,
-        identity.shopId
-      );
-
-    if (!currentCustomer) {
-      throw new Error(
-        'Customer not found'
-      );
-    }
-
-    const [
-      currentBalance,
-      currentItems,
-    ] = await Promise.all([
-      getCustomerBalanceService.execute({
-        shopId: identity.shopId,
-        customerId,
-      }),
-
-      searchItemsService.execute({
-        shopId: identity.shopId,
-        query: '',
-        limit: 100,
-      }),
-    ]);
-
-    if (cancelled) {
-      return;
-    }
-
-    setShopId(identity.shopId);
-    setDeviceId(identity.deviceId);
-    setCustomer(currentCustomer);
-    setBalance(currentBalance);
-    setAvailableItems(currentItems);
-  } catch (error) {
-    if (cancelled) {
-      return;
-    }
-
-    const message =
-      error instanceof Error
-        ? error.message
-        : 'Could not initialize Udhaar screen';
-
-    Alert.alert(
-      'Could not load customer',
-      message
+    const show = Keyboard.addListener(
+      'keyboardDidShow',
+      () => setKeyboardVisible(true)
     );
 
-    console.error(
-      'Failed to initialize Udhaar screen:',
-      error
-    );
-  } finally {
-    if (!cancelled) {
-      setLoading(false);
-    }
-  }
-}
-
-initialize();
-
-return () => {
-  cancelled = true;
-};
-}, [customerId]);
-
-  function resetForm() {
-      setAmount('');
-      setUseItems(false);
-      setItems([]);
-    }
-
-  function handleClose() {
-    if (
-      from === 'ledger' &&
-      customerId
-    ) {
-      router.replace({
-        pathname: '/customer/[id]',
-        params: {
-          id: customerId,
-          from: ledgerFrom ?? 'home',
-        },
-      });
-
-      return;
-    }
-
-    if (from === 'customers') {
-      router.replace('/customers');
-      return;
-    }
-
-    router.replace('/');
-  }
-
-  function handleEnableItems() {
-    setUseItems(true);
-
-    if (items.length === 0) {
-      setItems([
-        createDraftItem(),
-      ]);
-    }
-  }
-
-  function handleDisableItems() {
-    setUseItems(false);
-    setItems([]);
-  }
-
-  function handleAddItemRow() {
-    setUseItems(true);
-
-    setItems((current) => [
-      ...current,
-      createDraftItem(),
-    ]);
-  }
-
-  function handleRemoveItemRow(
-    id: string
-  ) {
-    setItems((current) =>
-      current.filter(
-        (item) => item.id !== id
-      )
-    );
-  }
-
-  function updateDraftItem(
-    id: string,
-    changes: Partial<DraftItem>
-  ) {
-    setItems((current) =>
-      current.map((item) =>
-        item.id === id
-          ? {
-              ...item,
-              ...changes,
-            }
-          : item
-      )
-    );
-  }
-
-  function handleItemNameChange(
-    draftId: string,
-    name: string
-  ) {
-    updateDraftItem(
-      draftId,
-      {
-        name,
-        itemId: null,
-      }
-    );
-  }
-
-  function handleSelectItem(
-    draftId: string,
-    item: Item
-  ) {
-    updateDraftItem(
-      draftId,
-      {
-        itemId: item.id,
-        name: item.name,
-      }
-    );
-  }
-
-  function handleToggleAvailableItem(
-    item: Item
-  ) {
-    const selected = items.some(
-      (draft) =>
-        draft.itemId === item.id
+    const hide = Keyboard.addListener(
+      'keyboardDidHide',
+      () => setKeyboardVisible(false)
     );
 
-    if (selected) {
-      setItems((current) =>
-        current.filter(
-          (draft) =>
-            draft.itemId !== item.id
-        )
-      );
+    return () => {
+      show.remove();
+      hide.remove();
+    };
+  }, []);
 
-      return;
-    }
+  // Always return to Home instead of previous
+  // customer or Add Udhaar screens.
+ const handleClose = useCallback(() => {
+  Keyboard.dismiss();
+  router.navigate('/(tabs)');
+}, []);
 
-    setUseItems(true);
+  const handleSave = useCallback(async () => {
+    if (!validAmount || saving) return;
 
-    setItems((current) => [
-      ...current,
-      {
-        id: Crypto.randomUUID(),
-        itemId: item.id,
-        name: item.name,
-      },
-    ]);
-  }
-
-  async function prepareItems(): Promise<
-    CreateUdhaarItemInput[]
-  > {
-    if (!useItems) {
-      return [];
-    }
-
-    if (!shopId) {
-      throw new Error(
-        'Shop has not been initialized'
-      );
-    }
-
-    if (!deviceId) {
-      throw new Error(
-        'Device has not been initialized'
-      );
-    }
-
-    const preparedItems:
-      CreateUdhaarItemInput[] = [];
-
-    for (const draft of items) {
-      const name =
-        draft.name.trim();
-
-      if (!name) {
-        continue;
-      }
-
-      let itemId =
-        draft.itemId;
-
-      if (!itemId) {
-        const existingItem =
-          availableItems.find(
-            (item) =>
-              item.name
-                .trim()
-                .toLocaleLowerCase() ===
-              name.toLocaleLowerCase()
-          );
-
-        if (existingItem) {
-          itemId =
-            existingItem.id;
-        } else {
-          const createdItem =
-            await createItemService.execute({
-              shopId,
-              deviceId,
-              name,
-            });
-
-          itemId =
-            createdItem.id;
-
-          setAvailableItems(
-            (current) => [
-              ...current,
-              createdItem,
-            ]
-          );
-        }
-      }
-
-      preparedItems.push({
-        itemId,
-        name,
-      });
-    }
-
-    return preparedItems;
-  }
-
-  async function handleSave() {
-    if (
-      !customerId ||
-      !shopId ||
-      !deviceId ||
-      saving
-    ) {
-      return;
-    }
-
-    const parsedAmount =
-      Number(amount.trim());
-
-    if (
-      !Number.isSafeInteger(
-        parsedAmount
-      )
-    ) {
-      Alert.alert(
-        'Invalid amount',
-        'Enter a whole rupee amount.'
-      );
-
-      return;
-    }
-
-    if (parsedAmount <= 0) {
-      Alert.alert(
-        'Invalid amount',
-        'Amount must be greater than zero.'
-      );
-
-      return;
-    }
+    Keyboard.dismiss();
 
     try {
-      setSaving(true);
+      const saved = await save();
 
-      const preparedItems =
-        await prepareItems();
-
-      await createUdhaarService.execute({
-          shopId,
-          customerId,
-          deviceId,
-          amount: parsedAmount,
-          items: preparedItems,
-        });
-
-        resetForm();
+      if (saved) {
         handleClose();
-    } catch (error) {
-      const message =
-        error instanceof Error
-          ? error.message
-          : 'Could not add Udhaar';
-
-      Alert.alert(
-        'Could not add Udhaar',
-        message
-      );
-
+      }
+    } catch (cause) {
       console.error(
-        'Failed to add Udhaar:',
-        error
+        '[add-udhaar] save failed',
+        cause
       );
-    } finally {
-      setSaving(false);
+
+      Toast.show({
+        type: 'error',
+        text1: 'Could not add Udhaar',
+        text2:
+          cause instanceof Error
+            ? cause.message
+            : 'Please try again.',
+      });
     }
-  }
+  }, [
+    validAmount,
+    saving,
+    save,
+    handleClose,
+  ]);
+
+  const scrollToItems = useCallback(() => {
+    requestAnimationFrame(() => {
+      scrollRef.current?.scrollToEnd({
+        animated: true,
+      });
+    });
+  }, []);
+
+  const handleAddItem = useCallback(() => {
+    addItemRow();
+    scrollToItems();
+  }, [addItemRow, scrollToItems]);
 
   if (loading) {
     return (
       <Screen>
         <View className="flex-1 items-center justify-center">
-          <ActivityIndicator
-            size="large"
-          />
+          <ActivityIndicator size="large" />
         </View>
       </Screen>
     );
@@ -542,381 +163,206 @@ return () => {
   if (!customer) {
     return (
       <Screen>
-        <AppHeader
-          title="Add Udhaar"
-          showBack
-          onBackPress={handleClose}
-        />
+        <View className="flex-row items-center px-4 py-4">
+          <Pressable
+            onPress={handleClose}
+            hitSlop={10}
+            accessibilityRole="button"
+            accessibilityLabel="Go to Home"
+          >
+            <Ionicons
+              name="arrow-back"
+              size={24}
+              color="#181816"
+            />
+          </Pressable>
+
+          <AppText className="ml-4 font-spline-semibold text-[18px]">
+            Add Udhaar
+          </AppText>
+        </View>
 
         <View className="flex-1 items-center justify-center px-5">
-          <AppText
-            variant="body"
-            className="text-center text-udhaar"
-          >
-            Customer could not be loaded.
+          <AppText className="text-center text-udhaar">
+            {error ?? 'Customer could not be loaded.'}
           </AppText>
         </View>
       </Screen>
     );
   }
 
-  const parsedAmount =
-    Number(amount.trim());
+  const selectedItemIds = items
+    .map((item) => item.itemId)
+    .filter(
+      (id): id is string => id !== null
+    );
 
-  const validAmount =
-    Number.isSafeInteger(
-      parsedAmount
-    ) &&
-    parsedAmount > 0;
+  const selectedNames = items
+    .filter(
+      (item) => item.name.trim().length > 0
+    )
+    .map((item) => item.name);
 
   return (
-    <KeyboardAvoidingView
-      className="flex-1 bg-background"
-      behavior={
-        Platform.OS === 'ios'
-          ? 'padding'
-          : undefined
-      }
-    >
-      <Screen>
-        <AppHeader
-          title="Add Udhaar"
-          showBack
-          onBackPress={handleClose}
+    <Screen>
+      {/* Fixed header */}
+      <View className="flex-row items-center justify-between border-b border-border bg-background px-4 py-3">
+        <View className="flex-row items-center gap-3">
+          <Pressable
+            onPress={handleClose}
+            hitSlop={10}
+            accessibilityRole="button"
+            accessibilityLabel="Go to Home"
+            className="h-10 w-9 items-center justify-center"
+          >
+            <Ionicons
+              name="arrow-back"
+              size={23}
+              color="#181816"
+            />
+          </Pressable>
+
+          <AppText className="font-spline-semibold text-[19px] text-foreground">
+            Add Udhaar
+          </AppText>
+        </View>
+
+        <SaveButton
+          loading={saving}
+          disabled={!validAmount}
+          accessibilityLabel="Save Udhaar"
+          onPress={() => {
+            void handleSave();
+          }}
         />
+      </View>
 
+      <KeyboardAvoidingView
+        className="flex-1"
+        behavior={
+          Platform.OS === 'ios'
+            ? 'padding'
+            : undefined
+        }
+      >
         <ScrollView
+          ref={scrollRef}
           className="flex-1"
-          contentContainerClassName="pb-8"
-          keyboardShouldPersistTaps="handled"
-          showsVerticalScrollIndicator={
-            false
+          contentContainerStyle={{
+            paddingBottom: keyboardVisible
+              ? 140
+              : 40,
+          }}
+          keyboardShouldPersistTaps="always"
+          keyboardDismissMode={
+            Platform.OS === 'ios'
+              ? 'interactive'
+              : 'on-drag'
           }
+          showsVerticalScrollIndicator={false}
         >
-          {/* Customer */}
-          <View className="pb-8 pt-5">
-            <AppText
-              className="
-                font-spline-bold
-                text-[30px]
-                leading-[38px]
-                text-foreground
-              "
-            >
-              {customer.name}
-            </AppText>
-
-            <View className="mt-2 flex-row items-baseline">
+          {/* Customer + current balance */}
+          <View className="flex-row items-center justify-between gap-3 border-b border-border px-5 py-5">
+            <View className="min-w-0 flex-1">
               <AppText
-                className="
-                  font-sans
-                  text-[17px]
-                  leading-[24px]
-                  text-muted
-                "
+                numberOfLines={2}
+                className="font-spline-bold text-[23px] leading-[29px] text-foreground"
               >
-                Current balance
+                {customer.name}
+              </AppText>
+            </View>
+
+            <View className="items-end">
+              <AppText className="font-spline-semibold text-[20px] text-foreground">
+                Rs {balance.toLocaleString()}
               </AppText>
 
-              <AppText
-                className="
-                  ml-1.5
-                  font-spline-medium
-                  text-[17px]
-                  leading-[24px]
-                  text-foreground
-                "
-              >
-                Rs{' '}
-                {balance.toLocaleString()}
+              <AppText className="mt-1 font-sans text-[12px] text-muted">
+                Current balance
               </AppText>
             </View>
           </View>
 
-          {/* Amount */}
-          <View className="pt-5">
-            <MoneyInput
-              label="Amount"
-              value={amount}
-              onChangeText={
-                setAmount
-              }
-              autoFocus
-            />
-          </View>
+          <View className="px-5">
+            {/* Amount */}
+            <View className="pt-6">
+              <MoneyInput
+                label="Amount"
+                value={amount}
+                onChangeText={setAmount}
+                autoFocus
+              />
+            </View>
 
-          {/* Items */}
-          <View className="mt-12">
-            <View className="flex-row items-center justify-between">
-              <View className="flex-row items-center">
-                <AppText
-                  className="
-                    font-spline-medium
-                    text-[17px]
-                    leading-[24px]
-                    text-muted
-                  "
-                >
+            {/* Items heading */}
+            <View className="mt-8 flex-row items-center justify-between">
+              <View className="flex-row items-baseline gap-1.5">
+                <AppText className="font-spline-semibold text-[17px] text-foreground">
                   Items
                 </AppText>
 
-                <AppText
-                  className="
-                    ml-1
-                    font-sans
-                    text-[17px]
-                    leading-[24px]
-                    text-muted
-                  "
-                >
-                  · Optional
+                <AppText className="text-[13px] text-muted">
+                  Optional
                 </AppText>
               </View>
 
-              {useItems &&
-              items.length > 0 ? (
+              {selectedItems.length > 0 ? (
                 <Pressable
-                  onPress={
-                    handleDisableItems
-                  }
+                  onPress={clearItems}
                   hitSlop={8}
-                  className="py-1 active:opacity-60"
+                  accessibilityRole="button"
+                  accessibilityLabel="Clear all items"
                 >
-                  <AppText
-                    variant="small"
-                    className="text-udhaar"
-                  >
-                    Clear
+                  <AppText className="font-spline-medium text-[13px] text-udhaar">
+                    Clear all
                   </AppText>
                 </Pressable>
               ) : null}
             </View>
 
-            {/* Common item chips */}
-            {availableItems.length >
-            0 ? (
-              <View className="mt-4 flex-row flex-wrap gap-2">
-                {availableItems
-                  .slice(0, 6)
-                  .map((item) => {
-                    const selected =
-                      items.some(
-                        (draft) =>
-                          draft.itemId ===
-                          item.id
-                      );
+            {/* Selected item summary */}
+            <SelectedItems
+              items={selectedItems}
+              onRemove={removeItem}
+            />
 
-                    return (
-                      <Chip
-                        key={
-                          item.id
-                        }
-                        label={
-                          item.name
-                        }
-                        selected={
-                          selected
-                        }
-                        onPress={() =>
-                          handleToggleAvailableItem(
-                            item
-                          )
-                        }
-                      />
-                    );
-                  })}
+            {/* Customer/time-based suggestions */}
+            <QuickItems
+              items={quickItems}
+              selectedNames={selectedNames}
+              onToggle={toggleQuickItem}
+            />
+
+            {/* Custom item entry and catalog search */}
+            <ItemSearchFields
+              drafts={draftItems}
+              availableItems={availableItems}
+              selectedItemIds={selectedItemIds}
+              onChangeName={changeItemName}
+              onSelectItem={selectItem}
+              onConfirm={confirmItem}
+              onRemove={removeItem}
+              onAdd={handleAddItem}
+              onFocusField={scrollToItems}
+            />
+
+            {/* Amount summary */}
+            {validAmount ? (
+              <View className="mt-8 border-t border-border pt-4">
+                <View className="flex-row items-center justify-between">
+                  <AppText className="text-[13px] text-muted">
+                    Udhaar amount
+                  </AppText>
+
+                  <AppText className="font-spline-semibold text-[16px] text-udhaar">
+                    Rs {parsedAmount.toLocaleString()}
+                  </AppText>
+                </View>
               </View>
             ) : null}
-
-            {/* Custom item fields */}
-            {useItems ? (
-              <View className="mt-5 gap-4">
-                {items
-                  .filter(
-                    (draft) =>
-                      !draft.itemId
-                  )
-                  .map((draft) => {
-                    const searchName =
-                      draft.name
-                        .trim()
-                        .toLocaleLowerCase();
-
-                    const matches =
-                      searchName.length >
-                      0
-                        ? availableItems
-                            .filter(
-                              (
-                                item
-                              ) =>
-                                item.name
-                                  .toLocaleLowerCase()
-                                  .includes(
-                                    searchName
-                                  )
-                            )
-                            .slice(
-                              0,
-                              5
-                            )
-                        : [];
-
-                    return (
-                      <View
-                        key={
-                          draft.id
-                        }
-                        className="gap-2"
-                      >
-                        <View className="flex-row items-center gap-2">
-                          <TextField
-                            value={
-                              draft.name
-                            }
-                            onChangeText={(
-                              value
-                            ) =>
-                              handleItemNameChange(
-                                draft.id,
-                                value
-                              )
-                            }
-                            placeholder="Item name"
-                            autoCapitalize="words"
-                            className="flex-1"
-                          />
-
-                          <Pressable
-                            onPress={() =>
-                              handleRemoveItemRow(
-                                draft.id
-                              )
-                            }
-                            accessibilityRole="button"
-                            accessibilityLabel="Remove item"
-                            hitSlop={8}
-                            className="
-                              h-12
-                              w-10
-                              items-center
-                              justify-center
-                              rounded-full
-                              active:bg-udhaar-soft
-                            "
-                          >
-                            <Ionicons
-                              name="close"
-                              size={
-                                21
-                              }
-                              color="#D9544D"
-                            />
-                          </Pressable>
-                        </View>
-
-                        {matches.length >
-                        0 ? (
-                          <View className="overflow-hidden rounded-control border border-border bg-surface">
-                            {matches.map(
-                              (
-                                item,
-                                matchIndex
-                              ) => (
-                                <Pressable
-                                  key={
-                                    item.id
-                                  }
-                                  onPress={() =>
-                                    handleSelectItem(
-                                      draft.id,
-                                      item
-                                    )
-                                  }
-                                  className={`
-                                    px-4
-                                    py-3
-                                    active:bg-chip
-                                    ${
-                                      matchIndex <
-                                      matches.length -
-                                        1
-                                        ? 'border-b border-border'
-                                        : ''
-                                    }
-                                  `}
-                                >
-                                  <AppText variant="body">
-                                    {
-                                      item.name
-                                    }
-                                  </AppText>
-                                </Pressable>
-                              )
-                            )}
-                          </View>
-                        ) : null}
-                      </View>
-                    );
-                  })}
-              </View>
-            ) : null}
-
-            {/* Other item */}
-            <Pressable
-              onPress={
-                handleAddItemRow
-              }
-              className="
-                mt-4
-                flex-row
-                items-center
-                self-start
-                rounded-full
-                bg-chip
-                px-4
-                py-2.5
-                active:opacity-60
-              "
-            >
-              <Ionicons
-                name="add"
-                size={18}
-                color="#777770"
-              />
-
-              <AppText
-                className="
-                  ml-1
-                  font-spline-medium
-                  text-[16px]
-                  text-muted
-                "
-              >
-                Other
-              </AppText>
-            </Pressable>
           </View>
         </ScrollView>
-
-        {/* Save */}
-        <View className="border-t border-border bg-background pb-5 pt-3">
-          <Button
-            label={
-              validAmount
-                ? `Add Rs ${parsedAmount.toLocaleString()}`
-                : 'Add Udhaar'
-            }
-            loading={saving}
-            disabled={
-              !validAmount
-            }
-            onPress={
-              handleSave
-            }
-          />
-        </View>
-      </Screen>
-    </KeyboardAvoidingView>
+      </KeyboardAvoidingView>
+    </Screen>
   );
 }
