@@ -1,62 +1,37 @@
-import React, {
-  useEffect,
-  useState,
-} from 'react';
+
+import { useCallback, useState } from 'react';
+
 import {
   ActivityIndicator,
-  Alert,
+  Keyboard,
   KeyboardAvoidingView,
   Platform,
   Pressable,
   ScrollView,
   View,
 } from 'react-native';
+
+import { Ionicons } from '@expo/vector-icons';
+
 import {
   router,
   useLocalSearchParams,
 } from 'expo-router';
 
-import { AppHeader } from '@/components/layout';
 import {
   AppText,
-  Button,
   MoneyInput,
+  SaveButton,
   Screen,
 } from '@/components/ui';
 
-import { CustomerRepository } from '@/repositories/customer';
-import { LocalIdentityRepository } from '@/repositories/local-identity';
-import { LedgerRepository } from '@/repositories/ledger';
-import {
-  syncOutboxRepository,
-} from '@/repositories/sync-outbox';
+import { useRecordPayment } from '@/hooks/ledger/useRecordPayment';
 
-import { GetCustomerBalanceService } from '@/services/ledger/get-balance';
-import { RecordPaymentService } from '@/services/ledger/record-payment';
-
-import type { Customer } from '@/types/domain';
-
-const customerRepository =
-  new CustomerRepository();
-
-const ledgerRepository =
-  new LedgerRepository();
-
-const localIdentityRepository =
-  new LocalIdentityRepository();
-
-const recordPaymentService =
-  new RecordPaymentService(
-    ledgerRepository,
-    customerRepository,
-    syncOutboxRepository
-  );
-
-const getCustomerBalanceService =
-  new GetCustomerBalanceService(
-    ledgerRepository,
-    customerRepository
-  );
+function firstParam(
+  value: string | string[] | undefined
+): string | undefined {
+  return Array.isArray(value) ? value[0] : value;
+}
 
 export default function PaymentScreen() {
   const params = useLocalSearchParams<{
@@ -65,145 +40,34 @@ export default function PaymentScreen() {
     ledgerFrom?: string | string[];
   }>();
 
-  const customerId = Array.isArray(params.id)
-    ? params.id[0]
-    : params.id;
+  const customerId = firstParam(params.id);
+  const from = firstParam(params.from);
+  const ledgerFrom = firstParam(params.ledgerFrom);
 
-  const from = Array.isArray(params.from)
-    ? params.from[0]
-    : params.from;
+  const {
+    customer,
+    balance,
+    amount,
+    setAmount,
+    loading,
+    saving,
+    error,
+    parsedAmount,
+    validAmount,
+    remainingBalance,
+    isOverpayment,
+    payFull,
+    save,
+  } = useRecordPayment(customerId);
 
-  const ledgerFrom = Array.isArray(
-    params.ledgerFrom
-  )
-    ? params.ledgerFrom[0]
-    : params.ledgerFrom;
-
-  const [shopId, setShopId] = useState<
+  const [saveError, setSaveError] = useState<
     string | null
   >(null);
 
-  const [deviceId, setDeviceId] = useState<
-    string | null
-  >(null);
+  const handleClose = useCallback(() => {
+    Keyboard.dismiss();
 
-  const [customer, setCustomer] =
-    useState<Customer | null>(null);
-
-  const [balance, setBalance] =
-    useState(0);
-
-  const [amount, setAmount] =
-    useState('');
-
-  const [loading, setLoading] =
-    useState(true);
-
-  const [saving, setSaving] =
-    useState(false);
-
-  useEffect(() => {
-    let cancelled = false;
-
-    async function initialize() {
-  try {
-    if (!customerId) {
-      throw new Error(
-        'Customer ID is missing'
-      );
-    }
-
-    const identity =
-      await localIdentityRepository.get();
-
-    if (!identity) {
-      throw new Error(
-        'Local installation identity not found'
-      );
-    }
-
-    const currentCustomer =
-      await customerRepository.getByIdAndShop(
-        customerId,
-        identity.shopId
-      );
-
-    if (!currentCustomer) {
-      throw new Error(
-        'Customer not found'
-      );
-    }
-
-    const currentBalance =
-      await getCustomerBalanceService.execute({
-        shopId: identity.shopId,
-        customerId,
-      });
-
-    if (cancelled) {
-      return;
-    }
-
-    setShopId(identity.shopId);
-    setDeviceId(identity.deviceId);
-    setCustomer(currentCustomer);
-    setBalance(currentBalance);
-  } catch (error) {
-    if (cancelled) {
-      return;
-    }
-
-    const message =
-      error instanceof Error
-        ? error.message
-        : 'Could not initialize Payment screen';
-
-    Alert.alert(
-      'Could not load customer',
-      message
-    );
-
-    console.error(
-      'Failed to initialize Payment screen:',
-      error
-    );
-  } finally {
-    if (!cancelled) {
-      setLoading(false);
-    }
-  }
-}
-
-initialize();
-
-return () => {
-  cancelled = true;
-};
-}, [customerId]);
-
-const parsedAmount =
-  Number(amount.trim());
-
-  const validAmount =
-    Number.isSafeInteger(
-      parsedAmount
-    ) &&
-    parsedAmount > 0;
-
-  const remainingBalance =
-    validAmount
-      ? balance - parsedAmount
-      : balance;
-
-  function resetForm() {
-      setAmount('');
-    }
-
-  function handleClose() {
-    if (
-      from === 'ledger' &&
-      customerId
-    ) {
+    if (from === 'ledger' && customerId) {
       router.replace({
         pathname: '/customer/[id]',
         params: {
@@ -221,89 +85,38 @@ const parsedAmount =
     }
 
     router.replace('/');
-  }
+  }, [customerId, from, ledgerFrom]);
 
-  function handlePayFull() {
-    if (balance <= 0) {
-      return;
-    }
+  const handleSave = useCallback(async () => {
+    if (!validAmount || saving) return;
 
-    setAmount(
-      String(balance)
-    );
-  }
-
-  async function handleSave() {
-    if (
-      !customerId ||
-      !shopId ||
-      !deviceId ||
-      saving
-    ) {
-      return;
-    }
-
-    if (
-      !Number.isSafeInteger(
-        parsedAmount
-      )
-    ) {
-      Alert.alert(
-        'Invalid amount',
-        'Enter a whole rupee amount.'
-      );
-
-      return;
-    }
-
-    if (parsedAmount <= 0) {
-      Alert.alert(
-        'Invalid amount',
-        'Amount must be greater than zero.'
-      );
-
-      return;
-    }
+    setSaveError(null);
 
     try {
-      setSaving(true);
+      const saved = await save();
 
-      await recordPaymentService.execute({
-          shopId,
-          customerId,
-          deviceId,
-          amount: parsedAmount,
-        });
-
-        resetForm();
+      if (saved) {
         handleClose();
-    } catch (error) {
-      const message =
-        error instanceof Error
-          ? error.message
-          : 'Could not record payment';
-
-      Alert.alert(
-        'Could not record payment',
-        message
+      }
+    } catch (cause) {
+      setSaveError(
+        cause instanceof Error
+          ? cause.message
+          : 'Could not record payment'
       );
-
-      console.error(
-        'Failed to record payment:',
-        error
-      );
-    } finally {
-      setSaving(false);
     }
-  }
+  }, [
+    validAmount,
+    saving,
+    save,
+    handleClose,
+  ]);
 
   if (loading) {
     return (
       <Screen>
         <View className="flex-1 items-center justify-center">
-          <ActivityIndicator
-            size="large"
-          />
+          <ActivityIndicator size="large" />
         </View>
       </Screen>
     );
@@ -312,18 +125,29 @@ const parsedAmount =
   if (!customer) {
     return (
       <Screen>
-        <AppHeader
-          title="Payment"
-          showBack
-          onBackPress={handleClose}
-        />
+        <View className="flex-row items-center border-b border-border py-3">
+          <Pressable
+            onPress={handleClose}
+            accessibilityRole="button"
+            accessibilityLabel="Go back"
+            hitSlop={12}
+            className="h-11 w-11 items-center justify-center"
+          >
+            <Ionicons
+              name="arrow-back"
+              size={23}
+              color="#242422"
+            />
+          </Pressable>
+
+          <AppText className="ml-3 flex-1 font-spline-semibold text-[17px] text-foreground">
+            Payment
+          </AppText>
+        </View>
 
         <View className="flex-1 items-center justify-center px-5">
-          <AppText
-            variant="body"
-            className="text-center text-udhaar"
-          >
-            Customer could not be loaded.
+          <AppText className="text-center text-udhaar">
+            {error ?? 'Customer could not be loaded.'}
           </AppText>
         </View>
       </Screen>
@@ -340,69 +164,59 @@ const parsedAmount =
       }
     >
       <Screen>
-        <AppHeader
-          title="Payment"
-          showBack
-          onBackPress={handleClose}
-        />
+        {/* Header */}
+        <View className="flex-row items-center border-b border-border py-3">
+          <Pressable
+            onPress={handleClose}
+            accessibilityRole="button"
+            accessibilityLabel="Go back"
+            hitSlop={12}
+            className="h-11 w-11 items-center justify-center"
+          >
+            <Ionicons
+              name="arrow-back"
+              size={23}
+              color="#242422"
+            />
+          </Pressable>
+
+          <AppText className="ml-3 flex-1 font-spline-semibold text-[17px] text-foreground">
+            Payment
+          </AppText>
+
+          <SaveButton
+              loading={saving}
+              disabled={!validAmount}
+              onPress={() => {
+                void handleSave();
+              }}
+            />
+        </View>
 
         <ScrollView
           className="flex-1"
-          contentContainerClassName="pb-8"
+          contentContainerClassName="pb-10"
           keyboardShouldPersistTaps="handled"
-          showsVerticalScrollIndicator={
-            false
-          }
+          keyboardDismissMode="on-drag"
+          showsVerticalScrollIndicator={false}
         >
           {/* Customer */}
           <View className="pt-5">
-            <AppText
-              className="
-                font-spline-semibold
-                text-[13px]
-                uppercase
-                leading-[18px]
-                text-muted
-              "
-            >
+            <AppText className="font-spline-semibold text-[13px] uppercase leading-[18px] text-muted">
               Receiving from
             </AppText>
 
-            <AppText
-              className="
-                mt-3
-                font-spline-bold
-                text-[30px]
-                leading-[38px]
-                text-foreground
-              "
-            >
+            <AppText className="mt-3 font-spline-bold text-[30px] leading-[38px] text-foreground">
               {customer.name}
             </AppText>
 
             <View className="mt-3 flex-row items-baseline">
-              <AppText
-                className="
-                  font-sans
-                  text-[17px]
-                  leading-[24px]
-                  text-muted
-                "
-              >
+              <AppText className="font-sans text-[17px] leading-[24px] text-muted">
                 Outstanding:
               </AppText>
 
-              <AppText
-                className="
-                  ml-1.5
-                  font-spline-semibold
-                  text-[18px]
-                  leading-[24px]
-                  text-foreground
-                "
-              >
-                Rs{' '}
-                {balance.toLocaleString()}
+              <AppText className="ml-1.5 font-spline-semibold text-[18px] leading-[24px] text-foreground">
+                Rs {balance.toLocaleString()}
               </AppText>
             </View>
           </View>
@@ -412,52 +226,33 @@ const parsedAmount =
             <MoneyInput
               label="Payment amount"
               value={amount}
-              onChangeText={
-                setAmount
-              }
+              onChangeText={(value) => {
+                setAmount(value);
+
+                if (saveError) {
+                  setSaveError(null);
+                }
+              }}
               autoFocus
             />
 
             {/* Pay full */}
             {balance > 0 ? (
               <Pressable
-                onPress={handlePayFull}
+                onPress={() => {
+                  payFull();
+                  setSaveError(null);
+                }}
                 accessibilityRole="button"
                 accessibilityLabel={`Pay full balance of Rs ${balance.toLocaleString()}`}
-                className="
-                  mt-5
-                  min-h-12
-                  flex-row
-                  items-center
-                  self-start
-                  rounded-full
-                  bg-chip
-                  px-4
-                  active:opacity-70
-                "
+                className="mt-5 min-h-12 flex-row items-center self-start rounded-full bg-chip px-4 active:opacity-70"
               >
-                <AppText
-                  className="
-                    font-spline-medium
-                    text-[16px]
-                    leading-[22px]
-                    text-foreground
-                  "
-                >
+                <AppText className="font-spline-medium text-[16px] leading-[22px] text-foreground">
                   Pay full
                 </AppText>
 
-                <AppText
-                  className="
-                    ml-2
-                    font-sans
-                    text-[16px]
-                    leading-[22px]
-                    text-muted
-                  "
-                >
-                  Rs{' '}
-                  {balance.toLocaleString()}
+                <AppText className="ml-2 font-sans text-[16px] leading-[22px] text-muted">
+                  Rs {balance.toLocaleString()}
                 </AppText>
               </Pressable>
             ) : null}
@@ -465,72 +260,42 @@ const parsedAmount =
 
           {/* Remaining balance */}
           <View className="mt-6">
-            <View
-              className="
-                flex-row
-                items-baseline
-                self-start
-                rounded-control
-                bg-chip
-                px-4
-                py-3
-              "
-            >
-              <AppText
-                className="
-                  font-sans
-                  text-[16px]
-                  leading-[22px]
-                  text-muted
-                "
-              >
+            <View className="flex-row items-baseline self-start rounded-control bg-chip px-4 py-3">
+              <AppText className="font-sans text-[16px] leading-[22px] text-muted">
                 Remaining balance:
               </AppText>
 
               <AppText
-                className={`
-                  ml-1.5
-                  font-spline-semibold
-                  text-[17px]
-                  leading-[23px]
-                  ${
-                    remainingBalance <= 0
-                      ? 'text-payment'
-                      : 'text-foreground'
-                  }
-                `}
+                className={`ml-1.5 font-spline-semibold text-[17px] leading-[23px] ${
+                  remainingBalance <= 0
+                    ? 'text-payment'
+                    : 'text-foreground'
+                }`}
               >
-                Rs{' '}
-                {remainingBalance.toLocaleString()}
+                Rs {remainingBalance.toLocaleString()}
               </AppText>
             </View>
 
-            {validAmount &&
-            parsedAmount > balance ? (
+            {isOverpayment ? (
               <AppText
                 variant="caption"
                 className="mt-2 text-payment"
               >
-                Payment is greater than the
-                current outstanding balance.
+                Payment is greater than the current
+                outstanding balance.
               </AppText>
             ) : null}
           </View>
-        </ScrollView>
 
-        {/* Save */}
-        <View className="border-t border-border bg-background pb-5 pt-3">
-          <Button
-            label={
-              validAmount
-                ? `Record Rs ${parsedAmount.toLocaleString()}`
-                : 'Record Payment'
-            }
-            loading={saving}
-            disabled={!validAmount}
-            onPress={handleSave}
-          />
-        </View>
+          {/* Save errors */}
+          {saveError ? (
+            <View className="mt-6 rounded-xl border border-udhaar/20 bg-udhaar/5 px-4 py-3">
+              <AppText className="text-[14px] text-udhaar">
+                {saveError}
+              </AppText>
+            </View>
+          ) : null}
+        </ScrollView>
       </Screen>
     </KeyboardAvoidingView>
   );

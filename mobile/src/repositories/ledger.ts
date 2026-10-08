@@ -28,6 +28,31 @@ export interface CreateUdhaarWithItemsValues {
   items: CreateUdhaarItemValues[];
 }
 
+
+
+export interface LedgerHistoryCursor {
+  occurredAt: string;
+  createdAt: string;
+  id: string;
+}
+
+export interface LedgerHistoryFilter {
+  from?: string; // Inclusive ISO timestamp
+  to?: string;   // Exclusive ISO timestamp
+}
+
+export interface LedgerHistoryWithBalance
+  extends LedgerHistoryEntry {
+  balance_after: number;
+}
+
+export interface LedgerHistoryPage {
+  entries: LedgerHistoryWithBalance[];
+  nextCursor: LedgerHistoryCursor | null;
+  hasMore: boolean;
+}
+
+
 /**
  * Ledger entry returned for customer history.
  *
@@ -47,6 +72,20 @@ export interface LedgerHistoryEntry
 interface BalanceRow {
   balance: number;
 }
+
+
+export interface CustomerLedgerSummary {
+  totalUdhaar: number;
+  totalPayments: number;
+  outstanding: number;
+}
+
+interface CustomerLedgerSummaryRow {
+  total_udhaar: number;
+  total_payments: number;
+  outstanding: number;
+}
+
 
 export class LedgerRepository {
   async create(
@@ -237,6 +276,237 @@ export class LedgerRepository {
       offset
     );
   }
+
+
+
+async getHistoryPage(
+  shopId: string,
+  customerId: string,
+  options: {
+    limit?: number;
+    cursor?: LedgerHistoryCursor | null;
+    filter?: LedgerHistoryFilter;
+  } = {}
+): Promise<LedgerHistoryPage> {
+  const db = await getDatabase();
+
+  const limit = Math.min(
+    100,
+    Math.max(1, options.limit ?? 30)
+  );
+
+  const conditions: string[] = [];
+  const params: (string | number)[] = [
+    customerId,
+    shopId,
+  ];
+
+  if (options.filter?.from) {
+    conditions.push('h.occurred_at >= ?');
+    params.push(options.filter.from);
+  }
+
+  if (options.filter?.to) {
+    conditions.push('h.occurred_at < ?');
+    params.push(options.filter.to);
+  }
+
+  if (options.cursor) {
+    conditions.push(`
+      (
+        h.occurred_at < ?
+        OR (
+          h.occurred_at = ?
+          AND h.created_at < ?
+        )
+        OR (
+          h.occurred_at = ?
+          AND h.created_at = ?
+          AND h.id < ?
+        )
+      )
+    `);
+
+    params.push(
+      options.cursor.occurredAt,
+      options.cursor.occurredAt,
+      options.cursor.createdAt,
+      options.cursor.occurredAt,
+      options.cursor.createdAt,
+      options.cursor.id
+    );
+  }
+
+  const whereExtra = conditions.length
+    ? `AND ${conditions.join(' AND ')}`
+    : '';
+
+  const rows =
+    await db.getAllAsync<LedgerHistoryWithBalance>(
+      `
+        WITH history AS (
+          SELECT
+            le.id,
+            le.customer_id,
+            le.device_id,
+            le.type,
+            le.amount,
+            le.note,
+            le.occurred_at,
+            le.created_at,
+            le.deleted_at,
+            le.deleted_by_device_id,
+
+            SUM(
+              CASE
+                WHEN le.type = 'UDHAAR'
+                  THEN le.amount
+                WHEN le.type = 'PAYMENT'
+                  THEN -le.amount
+                ELSE 0
+              END
+            ) OVER (
+              ORDER BY
+                le.occurred_at ASC,
+                le.created_at ASC,
+                le.id ASC
+              ROWS BETWEEN
+                UNBOUNDED PRECEDING
+                AND CURRENT ROW
+            ) AS balance_after
+
+          FROM ledger_entries AS le
+
+          INNER JOIN customers AS c
+            ON c.id = le.customer_id
+
+          WHERE
+            le.customer_id = ?
+            AND c.shop_id = ?
+            AND le.deleted_at IS NULL
+        )
+
+        SELECT
+          h.*,
+
+          (
+            SELECT GROUP_CONCAT(ei.name, ', ')
+            FROM entry_items AS ei
+            WHERE ei.ledger_entry_id = h.id
+          ) AS item_names
+
+        FROM history AS h
+
+        WHERE 1 = 1
+          ${whereExtra}
+
+        ORDER BY
+          h.occurred_at DESC,
+          h.created_at DESC,
+          h.id DESC
+
+        LIMIT ?
+      `,
+      ...params,
+      limit + 1
+    );
+
+  const hasMore = rows.length > limit;
+  const entries = rows.slice(0, limit);
+  const last = entries[entries.length - 1];
+
+  return {
+    entries,
+    hasMore,
+    nextCursor:
+      hasMore && last
+        ? {
+            occurredAt: last.occurred_at,
+            createdAt: last.created_at,
+            id: last.id,
+          }
+        : null,
+  };
+}
+
+
+
+/**
+ * Calculate the complete customer ledger summary.
+ *
+ * - Includes all active ledger entries.
+ * - Excludes soft-deleted entries.
+ * - Validates the customer belongs to the shop.
+ * - Does not depend on pagination or filters.
+ * - Works entirely with local SQLite.
+ */
+async getCustomerLedgerSummary(
+  shopId: string,
+  customerId: string
+): Promise<CustomerLedgerSummary> {
+  const db = await getDatabase();
+
+  const row =
+    await db.getFirstAsync<CustomerLedgerSummaryRow>(
+      `
+        SELECT
+          COALESCE(
+            SUM(
+              CASE
+                WHEN le.type = 'UDHAAR'
+                  THEN le.amount
+                ELSE 0
+              END
+            ),
+            0
+          ) AS total_udhaar,
+
+          COALESCE(
+            SUM(
+              CASE
+                WHEN le.type = 'PAYMENT'
+                  THEN le.amount
+                ELSE 0
+              END
+            ),
+            0
+          ) AS total_payments,
+
+          COALESCE(
+            SUM(
+              CASE
+                WHEN le.type = 'UDHAAR'
+                  THEN le.amount
+                WHEN le.type = 'PAYMENT'
+                  THEN -le.amount
+                ELSE 0
+              END
+            ),
+            0
+          ) AS outstanding
+
+        FROM ledger_entries AS le
+
+        INNER JOIN customers AS c
+          ON c.id = le.customer_id
+
+        WHERE
+          le.customer_id = ?
+          AND c.shop_id = ?
+          AND le.deleted_at IS NULL
+      `,
+      customerId,
+      shopId
+    );
+
+  return {
+    totalUdhaar: row?.total_udhaar ?? 0,
+    totalPayments: row?.total_payments ?? 0,
+    outstanding: row?.outstanding ?? 0,
+  };
+}
+
+
 
 
   async softDeleteWithDatabase(

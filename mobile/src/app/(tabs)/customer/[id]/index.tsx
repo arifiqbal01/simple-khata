@@ -1,13 +1,15 @@
 
-import React, { useMemo } from 'react';
+import React, {
+  useCallback,
+  useMemo,
+  useState,
+} from 'react';
 
 import {
   ActivityIndicator,
   SectionList,
   View,
 } from 'react-native';
-
-import { Ionicons } from '@expo/vector-icons';
 
 import {
   router,
@@ -16,16 +18,16 @@ import {
 
 import Toast from 'react-native-toast-message';
 
-import {
-  BalanceSummary,
-  LedgerRow,
-} from '@/components/ledger';
+import { formatRupees } from '@/utils/ledger/format-rupees';
+
+import { LedgerRow } from '@/components/ledger/LedgerRow';
+
+import { CustomerLedgerHeader } from '@/components/ledger/CustomerLedgerHeader';
 
 import { AppHeader } from '@/components/layout';
 
 import {
   AppText,
-  Button,
   EmptyState,
   Screen,
   SectionLabel,
@@ -42,15 +44,22 @@ import {
 } from '@/hooks/ledger/useCustomerLedger';
 
 import {
+  useCustomerTransactions,
+} from '@/hooks/ledger/useCustomerTransactions';
+
+import {
   useDeleteLedgerEntry,
 } from '@/hooks/ledger/useDeleteLedgerEntry';
 
+import {
+  useShareCustomerLedger,
+} from '@/hooks/ledger/useShareCustomerLedger';
+
 import { useConfirm } from '@/hooks/ui/useConfirm';
 
-interface LedgerSection {
-  title: string;
-  data: LedgerHistoryEntry[];
-}
+import {
+  groupLedgerEntries,
+} from '@/utils/ledger/groupLedgerEntries';
 
 export default function CustomerLedgerScreen() {
   const params = useLocalSearchParams<{
@@ -66,40 +75,81 @@ export default function CustomerLedgerScreen() {
     ? params.from[0]
     : params.from;
 
-  // Customer details, balance, history and refresh.
+  // Customer details and current balance
   const {
     shopId,
     customer,
-    entries,
     balance,
-    loading,
-    refreshing,
-    error,
+    loading: customerLoading,
+    refreshing: customerRefreshing,
+    error: customerError,
     reload,
-    refresh,
+    refresh: refreshCustomer,
   } = useCustomerLedger(customerId);
 
-  // Offline-first ledger deletion.
+  // Paginated transaction history
+  const {
+    entries,
+    filter,
+    setFilter,
+    loading: transactionsLoading,
+    loadingMore,
+    hasMore,
+    error: transactionsError,
+    loadMore,
+    refresh: refreshTransactions,
+  } = useCustomerTransactions(
+    shopId ?? undefined,
+    customerId
+  );
+
+  // WhatsApp ledger summary sharing
+  const {
+    share,
+    isSharing,
+  } = useShareCustomerLedger({
+    shopId: shopId ?? '',
+    customerId: customerId ?? '',
+    customerName: customer?.name ?? '',
+    shopName: 'Simple Khata',
+  });
+
+  // Delete transaction
   const {
     deleteEntry,
     isDeleting,
   } = useDeleteLedgerEntry({
     shopId,
-    onDeleted: reload,
+    onDeleted: async () => {
+      await reload();
+      refreshTransactions();
+    },
   });
 
-  // Reusable confirmation modal.
+  // Delete confirmation modal
   const {
     confirm,
     confirmProps,
   } = useConfirm();
 
+  // Pull-to-refresh state
+  const [refreshing, setRefreshing] =
+    useState(false);
+
+  // Only one transaction can show its delete icon
+  const [selectedEntryId, setSelectedEntryId] =
+    useState<string | null>(null);
+
+  // Group transactions by day
   const sections = useMemo(
     () => groupLedgerEntries(entries),
     [entries]
   );
 
-  function handleBack() {
+  const loading = customerLoading && !customer;
+
+  // Navigation
+  function handleBack(): void {
     if (from === 'customers') {
       router.replace('/customers');
       return;
@@ -108,10 +158,8 @@ export default function CustomerLedgerScreen() {
     router.replace('/');
   }
 
-  function handleAddUdhaar() {
-    if (!customerId) {
-      return;
-    }
+  function handleAddUdhaar(): void {
+    if (!customerId) return;
 
     router.push({
       pathname: '/customer/[id]/udhaar',
@@ -123,10 +171,8 @@ export default function CustomerLedgerScreen() {
     });
   }
 
-  function handlePayment() {
-    if (!customerId) {
-      return;
-    }
+  function handlePayment(): void {
+    if (!customerId) return;
 
     router.push({
       pathname: '/customer/[id]/payment',
@@ -138,27 +184,54 @@ export default function CustomerLedgerScreen() {
     });
   }
 
-  function handleRefresh() {
-    void refresh().catch((refreshError) => {
+  // Transaction selection
+  function handleSelectEntry(entryId: string): void {
+    if (isDeleting) return;
+
+    setSelectedEntryId((current) =>
+      current === entryId ? null : entryId
+    );
+  }
+
+  // Pull-to-refresh
+  const handleRefresh = useCallback(async () => {
+    if (refreshing) return;
+
+    setRefreshing(true);
+
+    try {
+      await refreshCustomer();
+      refreshTransactions();
+
+      setSelectedEntryId(null);
+    } catch (cause) {
       console.error(
         '[customer-ledger] refresh failed',
-        refreshError
+        cause
       );
 
       Toast.show({
         type: 'error',
         text1: 'Refresh failed',
-        text2: 'Could not refresh ledger history.',
+        text2:
+          cause instanceof Error
+            ? cause.message
+            : 'Could not refresh ledger history.',
       });
-    });
-  }
+    } finally {
+      setRefreshing(false);
+    }
+  }, [
+    refreshing,
+    refreshCustomer,
+    refreshTransactions,
+  ]);
 
+  // Delete transaction with confirmation
   async function handleDelete(
     entry: LedgerHistoryEntry
-  ) {
-    if (isDeleting) {
-      return;
-    }
+  ): Promise<void> {
+    if (isDeleting) return;
 
     const entryType =
       entry.type === 'UDHAAR'
@@ -170,48 +243,39 @@ export default function CustomerLedgerScreen() {
       message:
         `Are you sure you want to delete this ` +
         `${entryType.toLowerCase()} entry of ` +
-        `Rs ${entry.amount.toLocaleString()}? ` +
+        `Rs ${formatRupees(entry.amount)}? ` +
         'The customer balance will be updated.',
       confirmText: 'Delete Entry',
       cancelText: 'Cancel',
       destructive: true,
     });
 
-    if (!approved) {
-      return;
-    }
+    if (!approved) return;
 
     try {
       await deleteEntry(entry);
 
-      Toast.show({
-        type: 'success',
-        text1: 'Entry deleted',
-        text2:
-          `${entryType} entry removed. ` +
-          'Customer balance updated.',
-        position: 'top',
-        visibilityTime: 3000,
-      });
-    } catch (deleteError) {
+      // The deletion hook refreshes customer
+      // balance and transaction history.
+      setSelectedEntryId(null);
+    } catch (cause) {
       console.error(
         '[customer-ledger] delete failed',
-        deleteError
+        cause
       );
 
       Toast.show({
         type: 'error',
         text1: 'Delete failed',
         text2:
-          deleteError instanceof Error
-            ? deleteError.message
+          cause instanceof Error
+            ? cause.message
             : 'Could not delete the entry.',
-        position: 'top',
-        visibilityTime: 4000,
       });
     }
   }
 
+  // Initial customer loading
   if (loading) {
     return (
       <Screen>
@@ -222,6 +286,7 @@ export default function CustomerLedgerScreen() {
     );
   }
 
+  // Customer not found
   if (!customer) {
     return (
       <Screen>
@@ -232,11 +297,8 @@ export default function CustomerLedgerScreen() {
         />
 
         <View className="flex-1 items-center justify-center px-6">
-          <AppText
-            variant="body"
-            className="text-center text-udhaar"
-          >
-            {error ?? 'Customer not found.'}
+          <AppText className="text-center text-udhaar">
+            {customerError ?? 'Customer not found.'}
           </AppText>
         </View>
       </Screen>
@@ -245,6 +307,7 @@ export default function CustomerLedgerScreen() {
 
   return (
     <Screen>
+      {/* Customer name and back navigation */}
       <AppHeader
         title={customer.name}
         showBack
@@ -254,156 +317,132 @@ export default function CustomerLedgerScreen() {
       <SectionList
         sections={sections}
         keyExtractor={(entry) => entry.id}
-        refreshing={refreshing}
-        onRefresh={handleRefresh}
         showsVerticalScrollIndicator={false}
         stickySectionHeadersEnabled={false}
         contentContainerClassName="pb-8"
+
+        // Pull-to-refresh
+        refreshing={
+          refreshing || customerRefreshing
+        }
+        onRefresh={() => {
+          void handleRefresh();
+        }}
+
+        // Lazy load older transactions
+        onEndReached={() => {
+          if (
+            !transactionsLoading &&
+            !loadingMore &&
+            hasMore
+          ) {
+            void loadMore();
+          }
+        }}
+        onEndReachedThreshold={0.3}
+
+        // Balance, actions and filters
         ListHeaderComponent={
           <>
-            <BalanceSummary
+            <CustomerLedgerHeader
               balance={balance}
-              size="large"
-              className="pt-5"
+              filter={filter}
+              onAddUdhaar={handleAddUdhaar}
+              onPayment={handlePayment}
+              onShareWhatsApp={share}
+              isSharing={isSharing}
+              onFilterChange={(nextFilter) => {
+                setSelectedEntryId(null);
+                setFilter(nextFilter);
+              }}
             />
 
-            <View className="mt-5 flex-row gap-3">
-              <Button
-                label="Add Udhaar"
-                onPress={handleAddUdhaar}
-                className="flex-1"
-                left={
-                  <Ionicons
-                    name="add"
-                    size={22}
-                    color="#FFFFFF"
-                  />
-                }
-              />
-
-              <Button
-                label="Payment"
-                variant="secondary"
-                onPress={handlePayment}
-                className="flex-1"
-                left={
-                  <Ionicons
-                    name="arrow-down-outline"
-                    size={20}
-                    color="#181816"
-                  />
-                }
-              />
-            </View>
-
-            {error ? (
+            {/* Customer or transaction errors */}
+            {customerError ||
+            transactionsError ? (
               <View className="mt-5 rounded-control bg-udhaar-soft px-4 py-3">
-                <AppText
-                  variant="small"
-                  className="text-udhaar"
-                >
-                  {error}
+                <AppText className="text-[13px] text-udhaar">
+                  {transactionsError ??
+                    customerError}
+                </AppText>
+              </View>
+            ) : null}
+
+            {/* Initial transaction loading */}
+            {transactionsLoading ? (
+              <View className="items-center py-12">
+                <ActivityIndicator
+                  size="small"
+                />
+
+                <AppText className="mt-3 text-[13px] text-muted">
+                  Loading transactions...
                 </AppText>
               </View>
             ) : null}
           </>
         }
+
+        // Day headings
         renderSectionHeader={({ section }) => (
           <SectionLabel className="bg-background pb-2 pt-8">
             {section.title}
           </SectionLabel>
         )}
+
+        // Transaction row
         renderItem={({ item }) => (
           <LedgerRow
             entry={item}
+            selected={
+              selectedEntryId === item.id
+            }
+            onPress={() =>
+              handleSelectEntry(item.id)
+            }
             onDelete={handleDelete}
             isDeleting={isDeleting}
           />
         )}
+
+        // Empty history
         ListEmptyComponent={
-          <EmptyState
-            icon="receipt-outline"
-            title="No transactions yet"
-            description="Add udhaar or record a payment to start this customer's history."
-            className="py-14"
-          />
+          !transactionsLoading ? (
+            <EmptyState
+              icon="receipt-outline"
+              title={
+                filter.type === 'recent'
+                  ? 'No recent transactions'
+                  : 'No transactions found'
+              }
+              description={
+                filter.type === 'recent'
+                  ? 'Check older transactions if available.'
+                  : 'Try another date or date range.'
+              }
+              className="py-14"
+            />
+          ) : null
+        }
+
+        // Pagination loader
+        ListFooterComponent={
+          loadingMore ? (
+            <View className="items-center py-6">
+              <ActivityIndicator
+                size="small"
+              />
+
+              <AppText className="mt-2 text-[12px] text-muted">
+                Loading older transactions...
+              </AppText>
+            </View>
+          ) : null
         }
       />
 
+      {/* Destructive action confirmation */}
       <ConfirmModal {...confirmProps} />
     </Screen>
   );
-}
-
-function groupLedgerEntries(
-  entries: LedgerHistoryEntry[]
-): LedgerSection[] {
-  const sections: LedgerSection[] = [];
-
-  for (const entry of entries) {
-    const title = formatSectionTitle(
-      entry.occurred_at
-    );
-
-    const existingSection =
-      sections[sections.length - 1];
-
-    if (existingSection?.title === title) {
-      existingSection.data.push(entry);
-      continue;
-    }
-
-    sections.push({
-      title,
-      data: [entry],
-    });
-  }
-
-  return sections;
-}
-
-function formatSectionTitle(
-  value: string
-): string {
-  const date = new Date(value);
-
-  if (Number.isNaN(date.getTime())) {
-    return '';
-  }
-
-  const now = new Date();
-
-  const today = new Date(
-    now.getFullYear(),
-    now.getMonth(),
-    now.getDate()
-  );
-
-  const activityDay = new Date(
-    date.getFullYear(),
-    date.getMonth(),
-    date.getDate()
-  );
-
-  const difference =
-    today.getTime() - activityDay.getTime();
-
-  const days = Math.floor(
-    difference / 86_400_000
-  );
-
-  if (days === 0) {
-    return 'TODAY';
-  }
-
-  if (days === 1) {
-    return 'YESTERDAY';
-  }
-
-  return date
-    .toLocaleDateString('en-GB', {
-      day: 'numeric',
-      month: 'short',
-    })
-    .toUpperCase();
 }

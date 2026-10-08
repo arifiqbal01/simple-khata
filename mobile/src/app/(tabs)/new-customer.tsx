@@ -1,26 +1,34 @@
+
 import React, { useState } from 'react';
+
 import {
   Alert,
+  Keyboard,
   KeyboardAvoidingView,
   Platform,
+  Pressable,
   ScrollView,
   View,
 } from 'react-native';
+
 import {
   router,
   useLocalSearchParams,
 } from 'expo-router';
 
-import { AppHeader } from '@/components/layout';
+import { Ionicons } from '@expo/vector-icons';
+
 import {
-  Button,
+  AppText,
   Screen,
+  SaveButton,
   TextField,
 } from '@/components/ui';
 
 import { CustomerRepository } from '@/repositories/customer';
+
 import { LocalIdentityRepository } from '@/repositories/local-identity';
-import { ShopRepository } from '@/repositories/shop';
+
 import {
   syncOutboxRepository,
 } from '@/repositories/sync-outbox';
@@ -29,9 +37,6 @@ import { CreateCustomerService } from '@/services/customer/create';
 
 const customerRepository =
   new CustomerRepository();
-
-const shopRepository =
-  new ShopRepository();
 
 const localIdentityRepository =
   new LocalIdentityRepository();
@@ -53,6 +58,7 @@ export default function NewCustomerScreen() {
 
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
+
   const [saving, setSaving] =
     useState(false);
 
@@ -62,12 +68,14 @@ export default function NewCustomerScreen() {
     trimmedName.length > 0 &&
     !saving;
 
-  function resetForm() {
-      setName('');
-      setPhone('');
-    }
+  function resetForm(): void {
+    setName('');
+    setPhone('');
+  }
 
-  function handleClose() {
+  function handleClose(): void {
+    Keyboard.dismiss();
+
     if (from === 'customers') {
       router.replace('/customers');
       return;
@@ -76,80 +84,109 @@ export default function NewCustomerScreen() {
     router.replace('/');
   }
 
-  async function handleSave() {
-  if (!canSave) {
-    return;
-  }
+  async function handleSave(): Promise<void> {
+    if (!canSave) return;
 
-  try {
-    setSaving(true);
+    Keyboard.dismiss();
 
-    /*
-     * Use the explicit identity for this installation.
-     * Do not infer the local device from the devices table,
-     * because it may also contain remote synced devices.
-     */
-    const identity =
-      await localIdentityRepository.get();
+    try {
+      setSaving(true);
 
-    if (!identity) {
-      throw new Error(
-        'Local installation identity not found'
+      // Use this installation's local identity.
+      const identity =
+        await localIdentityRepository.get();
+
+      if (!identity) {
+        throw new Error(
+          'Local installation identity not found'
+        );
+      }
+
+      await createCustomerService.execute({
+        shopId: identity.shopId,
+        deviceId: identity.deviceId,
+        name: trimmedName,
+        phone: phone.trim() || null,
+      });
+
+      resetForm();
+      handleClose();
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : 'Could not add customer';
+
+      Alert.alert(
+        'Could not add customer',
+        message
       );
+
+      console.error(
+        '[new-customer] save failed',
+        error
+      );
+    } finally {
+      setSaving(false);
     }
-
-    await createCustomerService.execute({
-      shopId: identity.shopId,
-      deviceId: identity.deviceId,
-      name: trimmedName,
-      phone: phone.trim() || null,
-    });
-
-    resetForm();
-    handleClose();
-  } catch (error) {
-    const message =
-      error instanceof Error
-        ? error.message
-        : 'Could not add customer';
-
-    Alert.alert(
-      'Could not add customer',
-      message
-    );
-
-    console.error(
-      'Failed to add customer:',
-      error
-    );
-  } finally {
-    setSaving(false);
   }
-}
 
   return (
-    <KeyboardAvoidingView
-      className="flex-1 bg-background"
-      behavior={
-        Platform.OS === 'ios'
-          ? 'padding'
-          : undefined
-      }
-    >
-      <Screen>
-        <AppHeader
-          title="New Customer"
-          showBack
-          onBackPress={handleClose}
-        />
+    <Screen>
+      {/* Fixed header - same as Add Udhaar */}
+      <View className="flex-row items-center justify-between border-b border-border bg-background px-4 py-3">
+        <View className="flex-row items-center gap-3">
+          <Pressable
+            onPress={handleClose}
+            hitSlop={10}
+            accessibilityRole="button"
+            accessibilityLabel="Go back"
+            className="h-10 w-9 items-center justify-center"
+          >
+            <Ionicons
+              name="arrow-back"
+              size={23}
+              color="#181816"
+            />
+          </Pressable>
 
+          <AppText className="font-spline-semibold text-[19px] text-foreground">
+            New Customer
+          </AppText>
+        </View>
+
+        <SaveButton
+          loading={saving}
+          disabled={!canSave}
+          accessibilityLabel="Save customer"
+          onPress={() => {
+            void handleSave();
+          }}
+        />
+      </View>
+
+      {/* Scrollable customer form */}
+      <KeyboardAvoidingView
+        className="flex-1"
+        behavior={
+          Platform.OS === 'ios'
+            ? 'padding'
+            : undefined
+        }
+      >
         <ScrollView
           className="flex-1"
           contentContainerClassName="pb-8 pt-6"
           keyboardShouldPersistTaps="handled"
+          keyboardDismissMode={
+            Platform.OS === 'ios'
+              ? 'interactive'
+              : 'on-drag'
+          }
           showsVerticalScrollIndicator={false}
         >
           <View className="gap-6">
+            {/* Customer name */}
             <TextField
               label="Name"
               value={name}
@@ -161,6 +198,7 @@ export default function NewCustomerScreen() {
               returnKeyType="next"
             />
 
+            {/* Optional phone number */}
             <TextField
               label="Phone · Optional"
               value={phone}
@@ -176,16 +214,7 @@ export default function NewCustomerScreen() {
             />
           </View>
         </ScrollView>
-
-        <View className="border-t border-border bg-background pb-5 pt-3">
-          <Button
-            label="Add Customer"
-            loading={saving}
-            disabled={!canSave}
-            onPress={handleSave}
-          />
-        </View>
-      </Screen>
-    </KeyboardAvoidingView>
+      </KeyboardAvoidingView>
+    </Screen>
   );
 }

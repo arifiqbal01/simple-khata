@@ -1,5 +1,5 @@
 import type { SQLiteDatabase } from 'expo-sqlite';
-
+import { runWriteTransaction } from '@/db/write-transaction';
 import { getDatabase } from '../db/database';
 
 export type SyncEntityType =
@@ -131,14 +131,12 @@ export class SyncOutboxRepository {
    * Financial writes and their outbox operation must be committed atomically.
    */
   async enqueue(
-    input: EnqueueSyncOperationInput,
-  ): Promise<void> {
-    const db = await getDatabase();
-
-    await db.withTransactionAsync(async () => {
-      await this.enqueueWithDatabase(db, input);
-    });
-  }
+      input: EnqueueSyncOperationInput
+    ): Promise<void> {
+      await runWriteTransaction(async (db) => {
+        await this.enqueueWithDatabase(db, input);
+      });
+    }
 
   /**
    * Return operations currently eligible to be pushed.
@@ -202,26 +200,21 @@ export class SyncOutboxRepository {
    * acknowledged the operation ID.
    */
   async removeAcknowledged(
-    ids: string[],
-  ): Promise<void> {
-    if (ids.length === 0) {
-      return;
-    }
-
-    const db = await getDatabase();
-
-    await db.withTransactionAsync(async () => {
-      for (const id of ids) {
-        await db.runAsync(
-          `
-            DELETE FROM sync_outbox
-            WHERE id = ?
-          `,
-          id,
-        );
+      ids: string[]
+    ): Promise<void> {
+      if (ids.length === 0) {
+        return;
       }
-    });
-  }
+
+      await runWriteTransaction(async (db) => {
+        for (const id of ids) {
+          await db.runAsync(
+            `DELETE FROM sync_outbox WHERE id = ?`,
+            id
+          );
+        }
+      });
+    }
 
   /**
    * Record a failed push attempt.
@@ -376,7 +369,7 @@ export class SyncOutboxRepository {
 
   let repairedCount = 0;
 
-  await db.withTransactionAsync(async () => {
+  await runWriteTransaction(async (db) => {
     for (const row of rows) {
       let payload: any;
 
