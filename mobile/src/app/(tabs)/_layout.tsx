@@ -107,6 +107,7 @@ export default function TabsLayout() {
           name="customer"
           options={{
             href: null,
+            popToTopOnBlur: true,
           }}
         />
       </Tabs>

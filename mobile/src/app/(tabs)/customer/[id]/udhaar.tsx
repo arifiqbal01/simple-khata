@@ -28,7 +28,7 @@ import {
   AppText,
   MoneyInput,
   Screen,
-  SaveButton
+  SaveButton,
 } from '@/components/ui';
 
 import { QuickItems } from '@/components/ledger/udhaar/QuickItems';
@@ -40,21 +40,11 @@ import { useAddUdhaar } from '@/hooks/ledger/useAddUdhaar';
 export default function AddUdhaarScreen() {
   const params = useLocalSearchParams<{
     id?: string | string[];
-    from?: string | string[];
-    ledgerFrom?: string | string[];
   }>();
 
   const customerId = Array.isArray(params.id)
     ? params.id[0]
     : params.id;
-
-  const from = Array.isArray(params.from)
-    ? params.from[0]
-    : params.from;
-
-  const ledgerFrom = Array.isArray(params.ledgerFrom)
-    ? params.ledgerFrom[0]
-    : params.ledgerFrom;
 
   const {
     customer,
@@ -107,27 +97,12 @@ export default function AddUdhaarScreen() {
     };
   }, []);
 
-  const handleClose = useCallback(() => {
-    Keyboard.dismiss();
-
-    if (from === 'ledger' && customerId) {
-      router.replace({
-        pathname: '/customer/[id]',
-        params: {
-          id: customerId,
-          from: ledgerFrom ?? 'home',
-        },
-      });
-      return;
-    }
-
-    if (from === 'customers') {
-      router.replace('/customers');
-      return;
-    }
-
-    router.replace('/');
-  }, [customerId, from, ledgerFrom]);
+  // Always return to Home instead of previous
+  // customer or Add Udhaar screens.
+ const handleClose = useCallback(() => {
+  Keyboard.dismiss();
+  router.navigate('/(tabs)');
+}, []);
 
   const handleSave = useCallback(async () => {
     if (!validAmount || saving) return;
@@ -193,7 +168,7 @@ export default function AddUdhaarScreen() {
             onPress={handleClose}
             hitSlop={10}
             accessibilityRole="button"
-            accessibilityLabel="Go back"
+            accessibilityLabel="Go to Home"
           >
             <Ionicons
               name="arrow-back"
@@ -237,7 +212,7 @@ export default function AddUdhaarScreen() {
             onPress={handleClose}
             hitSlop={10}
             accessibilityRole="button"
-            accessibilityLabel="Go back"
+            accessibilityLabel="Go to Home"
             className="h-10 w-9 items-center justify-center"
           >
             <Ionicons

@@ -33,11 +33,12 @@ export default function CustomerLayout() {
       />
 
       <Stack.Screen
-        name="[id]/udhaar"
-        options={{
-          headerShown: false,
-        }}
-      />
+          name="[id]/udhaar"
+          options={{
+            headerShown: false,
+            gestureEnabled: false,
+          }}
+        />
 
       <Stack.Screen
         name="[id]/payment"
