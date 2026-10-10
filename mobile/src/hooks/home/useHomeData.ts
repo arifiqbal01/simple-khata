@@ -18,12 +18,14 @@ import {
   type CustomerWithBalance,
 } from '@/repositories/customer';
 
+import { LedgerRepository } from '@/repositories/ledger';
 import { DeviceRepository } from '@/repositories/device';
 import { LocalIdentityRepository } from '@/repositories/local-identity';
 import { ShopRepository } from '@/repositories/shop';
 import { InitializeAppService } from '@/services/bootstrap/initialize';
 
 const customerRepository = new CustomerRepository();
+const ledgerRepository = new LedgerRepository();
 
 const initializeAppService = new InitializeAppService(
   new ShopRepository(),
@@ -46,6 +48,12 @@ export function useHomeData() {
   const [totalOutstanding, setTotalOutstanding] =
     useState(0);
 
+  const [totalMoneyOut, setTotalMoneyOut] =
+    useState(0);
+
+  const [totalMoneyIn, setTotalMoneyIn] =
+    useState(0);
+
   const [query, setQuery] = useState('');
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -62,7 +70,7 @@ export function useHomeData() {
     getSyncState
   );
 
-  // Load customers and outstanding balance.
+  // Load customers and shop-wide financial totals.
   const loadHome = useCallback(
     async (
       currentShopId: string,
@@ -79,11 +87,18 @@ export function useHomeData() {
       try {
         setError(null);
 
-        const result =
-          await customerRepository.getBalanceSummary(
+        const [result, shopSummary] = await Promise.all([
+          customerRepository.getBalanceSummary(
             currentShopId,
             searchQuery
-          );
+          ),
+
+          searchQuery.trim()
+            ? Promise.resolve(null)
+            : ledgerRepository.getShopLedgerSummary(
+                currentShopId
+              ),
+        ]);
 
         if (
           !mountedRef.current ||
@@ -94,9 +109,19 @@ export function useHomeData() {
 
         setCustomers(result.customers);
 
-        if (!searchQuery.trim()) {
+        // Financial totals are shop-wide.
+        // Do not change them during customer search.
+        if (!searchQuery.trim() && shopSummary) {
           setTotalOutstanding(
             result.totalOutstanding
+          );
+
+          setTotalMoneyOut(
+            shopSummary.totalMoneyOut
+          );
+
+          setTotalMoneyIn(
+            shopSummary.totalMoneyIn
           );
         }
       } catch (loadError) {
@@ -280,11 +305,16 @@ export function useHomeData() {
     shopName,
     deviceName,
     customers,
+
     totalOutstanding,
+    totalMoneyOut,
+    totalMoneyIn,
+
     query,
     loading,
     refreshing,
     error,
+
     setQuery: handleSearch,
     refresh,
   };

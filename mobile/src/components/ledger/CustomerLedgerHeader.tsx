@@ -1,17 +1,12 @@
 
 import React from 'react';
-
 import { View } from 'react-native';
-
 import { Ionicons } from '@expo/vector-icons';
 
+import { MoneySummary } from '@/components/ledger/MoneySummary';
 import { TransactionFilters } from '@/components/ledger/TransactionFilters';
 
-import {
-  AppText,
-  Button,
-} from '@/components/ui';
-
+import { AppText, Button } from '@/components/ui';
 import { formatRupees } from '@/utils/ledger/format-rupees';
 
 import type {
@@ -20,6 +15,8 @@ import type {
 
 export interface CustomerLedgerHeaderProps {
   balance: number;
+  moneyOut: number;
+  moneyIn: number;
 
   filter: TransactionFilterState;
 
@@ -28,9 +25,7 @@ export interface CustomerLedgerHeaderProps {
   ) => void;
 
   onAddUdhaar: () => void;
-
   onPayment: () => void;
-
   onShareWhatsApp: () => void;
 
   isSharing?: boolean;
@@ -38,6 +33,8 @@ export interface CustomerLedgerHeaderProps {
 
 export function CustomerLedgerHeader({
   balance,
+  moneyOut,
+  moneyIn,
   filter,
   onFilterChange,
   onAddUdhaar,
@@ -47,24 +44,37 @@ export function CustomerLedgerHeader({
 }: CustomerLedgerHeaderProps) {
   return (
     <View>
-      {/* Outstanding label and balance in one row */}
-      <View className="flex-row items-center justify-between pt-5">
-        <AppText className="font-spline-semibold text-[13px] uppercase leading-[18px] text-muted">
+      {/* Outstanding balance */}
+      <View className="flex-row items-center justify-between gap-3 pt-5">
+        <AppText
+          numberOfLines={1}
+          className="shrink-0 font-spline-semibold text-[13px] uppercase leading-[18px] text-muted"
+        >
           Outstanding
         </AppText>
 
-        <View className="flex-row items-baseline">
-          <AppText className="mr-1 font-spline-semibold text-[16px] text-muted">
+        <View className="min-w-0 flex-1 flex-row items-baseline justify-end">
+          <AppText className="mr-1 shrink-0 font-spline-semibold text-[16px] text-muted">
             Rs
           </AppText>
 
           <AppText
             numberOfLines={1}
-            className="font-spline-bold text-[28px] leading-[36px] text-foreground"
+            adjustsFontSizeToFit
+            minimumFontScale={0.65}
+            className="min-w-0 shrink font-spline-bold text-[37px] leading-[44px] text-foreground"
           >
             {formatRupees(balance)}
           </AppText>
         </View>
+      </View>
+
+      {/* Customer Money Out / Money In */}
+      <View className="mt-4">
+        <MoneySummary
+          moneyOut={moneyOut}
+          moneyIn={moneyIn}
+        />
       </View>
 
       {/* Ledger actions */}
@@ -100,7 +110,11 @@ export function CustomerLedgerHeader({
       {/* WhatsApp share action */}
       <View className="mt-3">
         <Button
-          label={isSharing ? 'Preparing Summary...' : 'Share on WhatsApp'}
+          label={
+            isSharing
+              ? 'Preparing Summary...'
+              : 'Share on WhatsApp'
+          }
           variant="secondary"
           onPress={onShareWhatsApp}
           disabled={isSharing}
@@ -122,7 +136,7 @@ export function CustomerLedgerHeader({
         </AppText>
       </View>
 
-      {/* Recent / Today / Yesterday / Custom */}
+      {/* Transaction date filters */}
       <TransactionFilters
         filter={filter}
         onChange={onFilterChange}

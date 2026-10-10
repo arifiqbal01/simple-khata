@@ -27,7 +27,7 @@ export function HomeHeader({
       <View className="flex-1">
         <AppText
           variant="title"
-          className="text-[24px] leading-[32px]"
+          className="text-[20px] leading-[24px]"
         >
           Simple Khata
         </AppText>

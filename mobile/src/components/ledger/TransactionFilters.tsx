@@ -20,7 +20,7 @@ const FILTERS: {
   type: TransactionDateFilter;
   label: string;
 }[] = [
-  { type: 'recent', label: 'Recent' },
+  { type: 'recent', label: 'All' },
   { type: 'today', label: 'Today' },
   { type: 'yesterday', label: 'Yesterday' },
   { type: 'custom', label: 'Custom' },
@@ -39,11 +39,18 @@ function formatDate(value: string): string {
 
   return new Date(year, month - 1, day).toLocaleDateString(
     'en-GB',
-    { day: 'numeric', month: 'short', year: 'numeric' }
+    {
+      day: 'numeric',
+      month: 'short',
+      year: 'numeric',
+    }
   );
 }
 
-export function TransactionFilters({ filter, onChange }: Props) {
+export function TransactionFilters({
+  filter,
+  onChange,
+}: Props) {
   const [customOpen, setCustomOpen] = useState(false);
 
   const [customFrom, setCustomFrom] = useState(
@@ -85,7 +92,8 @@ export function TransactionFilters({ filter, onChange }: Props) {
 
   return (
     <View>
-      <View className="mt-4 flex-row flex-wrap gap-2">
+      {/* Single-row transaction filters */}
+      <View className="mt-4 flex-row gap-1.5">
         {FILTERS.map((option) => {
           const selected =
             option.type === 'custom'
@@ -98,13 +106,16 @@ export function TransactionFilters({ filter, onChange }: Props) {
               onPress={() => selectFilter(option.type)}
               accessibilityRole="button"
               accessibilityState={{ selected }}
-              className={`min-h-10 items-center justify-center rounded-full px-4 ${
+              className={`min-h-10 min-w-0 flex-1 items-center justify-center rounded-full px-1 ${
                 selected ? 'bg-black' : 'bg-chip'
               }`}
             >
               <AppText
-                className={`font-spline-medium text-[13px] ${
-                  selected ? 'text-white' : 'text-foreground'
+                numberOfLines={1}
+                className={`font-spline-medium text-[12px] ${
+                  selected
+                    ? 'text-white'
+                    : 'text-foreground'
                 }`}
               >
                 {option.label}
@@ -114,6 +125,7 @@ export function TransactionFilters({ filter, onChange }: Props) {
         })}
       </View>
 
+      {/* Custom date range picker */}
       {customOpen ? (
         <View className="mt-4 rounded-2xl border border-border bg-surface p-4">
           <AppText className="font-spline-semibold text-[15px] text-foreground">
@@ -140,7 +152,9 @@ export function TransactionFilters({ filter, onChange }: Props) {
             className="mt-4 min-h-12"
           />
         </View>
-      ) : filter.type === 'custom' && filter.from && filter.to ? (
+      ) : filter.type === 'custom' &&
+        filter.from &&
+        filter.to ? (
         <AppText className="mt-3 text-[12px] text-muted">
           {formatDate(filter.from)} – {formatDate(filter.to)}
         </AppText>

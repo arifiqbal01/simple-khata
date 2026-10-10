@@ -1,18 +1,18 @@
 
 import React, {
   useCallback,
-  useMemo,
   useState,
 } from 'react';
 
 import {
   ActivityIndicator,
-  SectionList,
+  FlatList,
   View,
 } from 'react-native';
 
 import {
   router,
+  useFocusEffect,
   useLocalSearchParams,
 } from 'expo-router';
 
@@ -21,7 +21,6 @@ import Toast from 'react-native-toast-message';
 import { formatRupees } from '@/utils/ledger/format-rupees';
 
 import { LedgerRow } from '@/components/ledger/LedgerRow';
-
 import { CustomerLedgerHeader } from '@/components/ledger/CustomerLedgerHeader';
 
 import { AppHeader } from '@/components/layout';
@@ -30,13 +29,14 @@ import {
   AppText,
   EmptyState,
   Screen,
-  SectionLabel,
 } from '@/components/ui';
 
 import { ConfirmModal } from '@/components/ui/ConfirmModal';
 
-import type {
-  LedgerHistoryEntry,
+import {
+  LedgerRepository,
+  type LedgerHistoryEntry,
+  type CustomerLedgerSummary,
 } from '@/repositories/ledger';
 
 import {
@@ -57,9 +57,7 @@ import {
 
 import { useConfirm } from '@/hooks/ui/useConfirm';
 
-import {
-  groupLedgerEntries,
-} from '@/utils/ledger/groupLedgerEntries';
+const ledgerRepository = new LedgerRepository();
 
 export default function CustomerLedgerScreen() {
   const params = useLocalSearchParams<{
@@ -103,6 +101,75 @@ export default function CustomerLedgerScreen() {
     customerId
   );
 
+  // All-time customer ledger totals
+  const [customerSummary, setCustomerSummary] =
+    useState<CustomerLedgerSummary>({
+      totalUdhaar: 0,
+      totalPayments: 0,
+      outstanding: 0,
+    });
+
+  const loadCustomerSummary = useCallback(
+    async () => {
+      if (!shopId || !customerId) {
+        return;
+      }
+
+      try {
+        const summary =
+          await ledgerRepository.getCustomerLedgerSummary(
+            shopId,
+            customerId
+          );
+
+        setCustomerSummary(summary);
+      } catch (cause) {
+        console.error(
+          '[customer-ledger] summary failed',
+          cause
+        );
+      }
+    },
+    [shopId, customerId]
+  );
+
+  // Reload summary when screen receives focus.
+  // This also handles returning from Add Udhaar / Payment.
+  useFocusEffect(
+    useCallback(() => {
+      let active = true;
+
+      async function load() {
+        if (!shopId || !customerId) {
+          return;
+        }
+
+        try {
+          const summary =
+            await ledgerRepository.getCustomerLedgerSummary(
+              shopId,
+              customerId
+            );
+
+          if (active) {
+            setCustomerSummary(summary);
+          }
+        } catch (cause) {
+          console.error(
+            '[customer-ledger] summary failed',
+            cause
+          );
+        }
+      }
+
+      void load();
+
+      return () => {
+        active = false;
+      };
+    }, [shopId, customerId])
+  );
+
   // WhatsApp ledger summary sharing
   const {
     share,
@@ -122,6 +189,7 @@ export default function CustomerLedgerScreen() {
     shopId,
     onDeleted: async () => {
       await reload();
+      await loadCustomerSummary();
       refreshTransactions();
     },
   });
@@ -139,12 +207,6 @@ export default function CustomerLedgerScreen() {
   // Only one transaction can show its delete icon
   const [selectedEntryId, setSelectedEntryId] =
     useState<string | null>(null);
-
-  // Group transactions by day
-  const sections = useMemo(
-    () => groupLedgerEntries(entries),
-    [entries]
-  );
 
   const loading = customerLoading && !customer;
 
@@ -200,9 +262,12 @@ export default function CustomerLedgerScreen() {
     setRefreshing(true);
 
     try {
-      await refreshCustomer();
-      refreshTransactions();
+      await Promise.all([
+        refreshCustomer(),
+        loadCustomerSummary(),
+      ]);
 
+      refreshTransactions();
       setSelectedEntryId(null);
     } catch (cause) {
       console.error(
@@ -224,6 +289,7 @@ export default function CustomerLedgerScreen() {
   }, [
     refreshing,
     refreshCustomer,
+    loadCustomerSummary,
     refreshTransactions,
   ]);
 
@@ -254,9 +320,6 @@ export default function CustomerLedgerScreen() {
 
     try {
       await deleteEntry(entry);
-
-      // The deletion hook refreshes customer
-      // balance and transaction history.
       setSelectedEntryId(null);
     } catch (cause) {
       console.error(
@@ -314,11 +377,11 @@ export default function CustomerLedgerScreen() {
         onBackPress={handleBack}
       />
 
-      <SectionList
-        sections={sections}
+      {/* Flat transaction list: no date grouping */}
+      <FlatList
+        data={entries}
         keyExtractor={(entry) => entry.id}
         showsVerticalScrollIndicator={false}
-        stickySectionHeadersEnabled={false}
         contentContainerClassName="pb-8"
 
         // Pull-to-refresh
@@ -341,20 +404,21 @@ export default function CustomerLedgerScreen() {
         }}
         onEndReachedThreshold={0.3}
 
-        // Balance, actions and filters
+        // Balance, summary cards, actions and filters
         ListHeaderComponent={
           <>
             <CustomerLedgerHeader
               balance={balance}
+              moneyOut={customerSummary.totalUdhaar}
+              moneyIn={customerSummary.totalPayments}
               filter={filter}
+              onFilterChange={setFilter}
               onAddUdhaar={handleAddUdhaar}
               onPayment={handlePayment}
-              onShareWhatsApp={share}
-              isSharing={isSharing}
-              onFilterChange={(nextFilter) => {
-                setSelectedEntryId(null);
-                setFilter(nextFilter);
+              onShareWhatsApp={() => {
+                void share();
               }}
+              isSharing={isSharing}
             />
 
             {/* Customer or transaction errors */}
@@ -383,13 +447,6 @@ export default function CustomerLedgerScreen() {
           </>
         }
 
-        // Day headings
-        renderSectionHeader={({ section }) => (
-          <SectionLabel className="bg-background pb-2 pt-8">
-            {section.title}
-          </SectionLabel>
-        )}
-
         // Transaction row
         renderItem={({ item }) => (
           <LedgerRow
@@ -412,12 +469,12 @@ export default function CustomerLedgerScreen() {
               icon="receipt-outline"
               title={
                 filter.type === 'recent'
-                  ? 'No recent transactions'
+                  ? 'No transactions yet'
                   : 'No transactions found'
               }
               description={
                 filter.type === 'recent'
-                  ? 'Check older transactions if available.'
+                  ? 'Add Udhaar or record a payment to get started.'
                   : 'Try another date or date range.'
               }
               className="py-14"

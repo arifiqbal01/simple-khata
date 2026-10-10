@@ -52,6 +52,16 @@ export interface LedgerHistoryPage {
   hasMore: boolean;
 }
 
+export interface ShopLedgerSummary {
+  totalMoneyOut: number;
+  totalMoneyIn: number;
+}
+
+interface ShopLedgerSummaryRow {
+  total_money_out: number;
+  total_money_in: number;
+}
+
 
 /**
  * Ledger entry returned for customer history.
@@ -530,6 +540,55 @@ async getCustomerLedgerSummary(
   );
 
   return result.changes === 1;
+}
+
+
+async getShopLedgerSummary(
+  shopId: string
+): Promise<ShopLedgerSummary> {
+  const db = await getDatabase();
+
+  const row = await db.getFirstAsync<ShopLedgerSummaryRow>(
+    `
+      SELECT
+        COALESCE(
+          SUM(
+            CASE
+              WHEN le.type = 'UDHAAR'
+                THEN le.amount
+              ELSE 0
+            END
+          ),
+          0
+        ) AS total_money_out,
+
+        COALESCE(
+          SUM(
+            CASE
+              WHEN le.type = 'PAYMENT'
+                THEN le.amount
+              ELSE 0
+            END
+          ),
+          0
+        ) AS total_money_in
+
+      FROM ledger_entries AS le
+
+      INNER JOIN customers AS c
+        ON c.id = le.customer_id
+
+      WHERE
+        c.shop_id = ?
+        AND le.deleted_at IS NULL
+    `,
+    shopId
+  );
+
+  return {
+    totalMoneyOut: row?.total_money_out ?? 0,
+    totalMoneyIn: row?.total_money_in ?? 0,
+  };
 }
 
   async getCustomerBalance(

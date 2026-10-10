@@ -29,6 +29,8 @@ export default function HomeScreen() {
     deviceName,
     customers,
     totalOutstanding,
+    totalMoneyOut,
+    totalMoneyIn,
     query,
     loading,
     refreshing,
@@ -100,6 +102,8 @@ export default function HomeScreen() {
 
             <OutstandingSummary
               amount={totalOutstanding}
+              moneyOut={totalMoneyOut}
+              moneyIn={totalMoneyIn}
             />
 
             <View className="mb-5">

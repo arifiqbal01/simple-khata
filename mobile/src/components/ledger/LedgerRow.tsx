@@ -63,7 +63,7 @@ export function LedgerRow({
 
   return (
     <View
-      className={`min-h-[90px] flex-row items-center border-b border-border ${
+      className={`min-h-[80px] flex-row items-center border-b border-border ${
         selected ? 'bg-surface' : ''
       }`}
     >
@@ -77,7 +77,7 @@ export function LedgerRow({
           selected,
           disabled: isDeleting,
         }}
-        className="min-w-0 flex-1 flex-row items-center py-4"
+        className="min-w-0 flex-1 flex-row items-center py-3"
       >
         {/* Transaction details */}
         <View className="min-w-0 flex-1 pr-2">
@@ -88,8 +88,12 @@ export function LedgerRow({
             {getEntryTitle(entry)}
           </AppText>
 
-          <AppText className="mt-0.5 font-sans text-[15px] leading-[20px] text-muted">
-            {formatEntryTime(entry.occurred_at)}
+          {/* Date and time */}
+          <AppText
+            numberOfLines={1}
+            className="mt-1 font-sans text-[12px] leading-[16px] text-muted"
+          >
+            {formatEntryDateTime(entry.occurred_at)}
           </AppText>
         </View>
 
@@ -110,7 +114,7 @@ export function LedgerRow({
           {hasBalance ? (
             <AppText
               numberOfLines={1}
-              className="mt-0.5 font-spline-semibold text-[14px] leading-[19px] text-muted"
+              className="mt-1 font-sans text-[12px] leading-[16px] text-muted"
             >
               Balance Rs{' '}
               {formattedBalance}
@@ -168,7 +172,7 @@ function getEntryTitle(
   return itemNames || 'Udhaar';
 }
 
-function formatEntryTime(
+function formatEntryDateTime(
   value: string
 ): string {
   const date = new Date(value);
@@ -177,8 +181,23 @@ function formatEntryTime(
     return value;
   }
 
-  return date.toLocaleTimeString([], {
-    hour: 'numeric',
-    minute: '2-digit',
-  });
+  const formattedDate = date.toLocaleDateString(
+    'en-PK',
+    {
+      day: 'numeric',
+      month: 'short',
+      year: 'numeric',
+    }
+  );
+
+  const formattedTime = date.toLocaleTimeString(
+    'en-PK',
+    {
+      hour: 'numeric',
+      minute: '2-digit',
+      hour12: true,
+    }
+  );
+
+  return `${formattedDate} · ${formattedTime}`;
 }
