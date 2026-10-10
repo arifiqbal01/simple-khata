@@ -55,11 +55,15 @@ import {
   useShareCustomerLedger,
 } from '@/hooks/ledger/useShareCustomerLedger';
 
+import { useShopIdentity } from '@/hooks/shop/useShopIdentity';
 import { useConfirm } from '@/hooks/ui/useConfirm';
 
 const ledgerRepository = new LedgerRepository();
 
 export default function CustomerLedgerScreen() {
+  // Hooks must be called inside the component.
+  const { shopName } = useShopIdentity();
+
   const params = useLocalSearchParams<{
     id?: string | string[];
     from?: string | string[];
@@ -134,7 +138,7 @@ export default function CustomerLedgerScreen() {
   );
 
   // Reload summary when screen receives focus.
-  // This also handles returning from Add Udhaar / Payment.
+  // This handles returning from Add Udhaar / Payment.
   useFocusEffect(
     useCallback(() => {
       let active = true;
@@ -178,7 +182,7 @@ export default function CustomerLedgerScreen() {
     shopId: shopId ?? '',
     customerId: customerId ?? '',
     customerName: customer?.name ?? '',
-    shopName: 'Simple Khata',
+    shopName,
   });
 
   // Delete transaction
@@ -416,6 +420,15 @@ export default function CustomerLedgerScreen() {
               onAddUdhaar={handleAddUdhaar}
               onPayment={handlePayment}
               onShareWhatsApp={() => {
+                if (!shopName) {
+                  Toast.show({
+                    type: 'error',
+                    text1: 'Shop name unavailable',
+                    text2: 'Please try again.',
+                  });
+                  return;
+                }
+
                 void share();
               }}
               isSharing={isSharing}
@@ -435,9 +448,7 @@ export default function CustomerLedgerScreen() {
             {/* Initial transaction loading */}
             {transactionsLoading ? (
               <View className="items-center py-12">
-                <ActivityIndicator
-                  size="small"
-                />
+                <ActivityIndicator size="small" />
 
                 <AppText className="mt-3 text-[13px] text-muted">
                   Loading transactions...
@@ -486,9 +497,7 @@ export default function CustomerLedgerScreen() {
         ListFooterComponent={
           loadingMore ? (
             <View className="items-center py-6">
-              <ActivityIndicator
-                size="small"
-              />
+              <ActivityIndicator size="small" />
 
               <AppText className="mt-2 text-[12px] text-muted">
                 Loading older transactions...

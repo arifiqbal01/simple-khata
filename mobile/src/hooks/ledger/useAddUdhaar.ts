@@ -201,8 +201,10 @@ export function useAddUdhaar(customerId?: string) {
           if (cancelled) return;
 
           if (suggestions.length > 0) {
-            setQuickItems(suggestions.slice(0, 6));
-          }
+          setQuickItems(
+            suggestions.slice(0, QUICK_ITEMS_VISIBLE_LIMIT)
+          );
+        }
         } catch (suggestionError) {
           console.warn(
             '[add-udhaar] quick items unavailable',

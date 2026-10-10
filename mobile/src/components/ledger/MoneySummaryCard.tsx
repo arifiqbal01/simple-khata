@@ -5,7 +5,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { AppText } from '@/components/ui';
 import { formatRupees } from '@/utils/ledger/format-rupees';
 
-interface MoneySummaryCardProps {
+export interface MoneySummaryCardProps {
   type: 'out' | 'in';
   amount: number;
 }
@@ -17,8 +17,9 @@ export function MoneySummaryCard({
   const isOut = type === 'out';
 
   return (
-    <View className="min-w-0 flex-1 rounded-2xl border border-border bg-surface px-3 py-3">
-      <View className="flex-row items-center gap-2">
+    <View className="min-w-0 flex-1 flex-row items-center justify-between gap-2 rounded-2xl border border-border bg-surface px-3 py-3">
+      {/* Icon and label */}
+      <View className="shrink-0 flex-row items-center gap-1">
         <Ionicons
           name={
             isOut
@@ -33,15 +34,16 @@ export function MoneySummaryCard({
           numberOfLines={1}
           className="font-spline-medium text-[12px] text-muted"
         >
-          {isOut ? 'Money Out' : 'Money In'}
+          {isOut ? 'Out' : 'In'}
         </AppText>
       </View>
 
+      {/* Amount */}
       <AppText
         numberOfLines={1}
         adjustsFontSizeToFit
-        minimumFontScale={0.7}
-        className="mt-2 font-spline-bold text-[20px] leading-[27px] text-foreground"
+        minimumFontScale={0.6}
+        className="min-w-0 flex-1 text-right font-spline-bold text-[17px] leading-[24px] text-foreground"
       >
         Rs {formatRupees(amount)}
       </AppText>
