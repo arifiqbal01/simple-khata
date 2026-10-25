@@ -3,7 +3,7 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.models.customer import Customer
+from app.models.party import Customer
 
 
 class CustomerRepository:

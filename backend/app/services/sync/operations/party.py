@@ -3,12 +3,12 @@ from uuid import UUID
 from sqlalchemy.orm import Session
 
 from app.core.exceptions import SyncConflictException
-from app.repositories.customer import CustomerRepository
+from app.repositories.party_repository import CustomerRepository
 from app.schemas.sync import (
     CustomerCreateOperation,
     CustomerUpdateOperation,
 )
-from app.services.customer.utils import normalize_phone
+from app.services.party.utils import normalize_phone
 
 
 def _validate_customer_operation(
@@ -20,7 +20,7 @@ def _validate_customer_operation(
 
     if operation.entityId != customer.id:
         raise SyncConflictException(
-            "Operation entity ID does not match customer ID"
+            "Operation entity ID does not match party ID"
         )
 
     if customer.shopId != shop_id:
@@ -60,7 +60,7 @@ def apply_customer_create(
 
         if existing_by_phone is not None:
             raise SyncConflictException(
-                "A customer with this phone number already exists"
+                "A party with this phone number already exists"
             )
 
     repository.create(
@@ -108,7 +108,7 @@ def apply_customer_update(
             and existing_by_phone.id != customer.id
         ):
             raise SyncConflictException(
-                "A customer with this phone number already exists"
+                "A party with this phone number already exists"
             )
 
     repository.update(

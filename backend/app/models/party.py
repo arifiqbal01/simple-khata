@@ -4,7 +4,8 @@ from uuid import UUID
 from sqlalchemy import ForeignKey, String, UniqueConstraint
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
-
+from sqlalchemy import Enum
+from app.models.enums import PartyType
 from app.db.base import Base
 from app.db.mixins import TimestampMixin, UUIDPrimaryKeyMixin
 
@@ -29,6 +30,13 @@ class Customer(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         ForeignKey("shops.id"),
         nullable=False,
         index=True,
+    )
+
+    type: Mapped[PartyType] = mapped_column(
+        Enum(PartyType, name="party_type"),
+        nullable=False,
+        default=PartyType.CUSTOMER,
+        server_default=PartyType.CUSTOMER.value,
     )
 
     name: Mapped[str] = mapped_column(

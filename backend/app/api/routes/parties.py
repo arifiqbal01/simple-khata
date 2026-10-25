@@ -5,14 +5,14 @@ from sqlalchemy.orm import Session
 
 from app.api.dependencies import get_shop_id
 from app.db.session import get_db
-from app.models.customer import Customer
-from app.repositories.customer import CustomerRepository
-from app.schemas.customer import (
+from app.models.party import Customer
+from app.repositories.party_repository import CustomerRepository
+from app.schemas.party import (
     CustomerCreate,
     CustomerRead,
     CustomerUpdate,
 )
-from app.services.customer import (
+from app.services.party import (
     CreateCustomerService,
     GetCustomerService,
     SearchCustomersService,

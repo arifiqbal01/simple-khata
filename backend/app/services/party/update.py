@@ -4,9 +4,9 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.core.exceptions import ConflictException, NotFoundException
-from app.models.customer import Customer
-from app.repositories.customer import CustomerRepository
-from app.schemas.customer import CustomerUpdate
+from app.models.party import Customer
+from app.repositories.party_repository import CustomerRepository
+from app.schemas.party import CustomerUpdate
 from app.services.customer.utils import normalize_phone
 
 

@@ -1,8 +1,8 @@
 from uuid import UUID
 
 from app.core.exceptions import NotFoundException
-from app.models.customer import Customer
-from app.repositories.customer import CustomerRepository
+from app.models.party import Customer
+from app.repositories.party_repository import CustomerRepository
 
 
 class GetCustomerService:
