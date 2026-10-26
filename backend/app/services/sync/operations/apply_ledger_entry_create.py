@@ -132,6 +132,9 @@ def apply_ledger_entry_create(
             item_id=item_data.itemId,
             name=item_data.itemName.strip(),
             amount=item_data.amount,
+            quantity=item_data.quantity,
+            unit=item_data.unit,
+            unit_price=item_data.unitPrice,
         )
 
 
@@ -153,7 +156,12 @@ def _validate_entry_items(
                 "Entry item name is required"
             )
 
-        if item.amount is not None and item.amount <= 0:
+        if item.amount is None:
+            if item.quantity is None or item.unitPrice is None:
+                raise SyncConflictException(
+                    "Entry item requires an amount or both quantity and unit price"
+                )
+        elif item.amount <= 0:
             raise SyncConflictException(
                 "Entry item amount must be greater than zero"
             )
