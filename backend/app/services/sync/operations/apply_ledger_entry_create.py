@@ -10,7 +10,10 @@ from app.repositories.device import DeviceRepository
 from app.repositories.entry_item import EntryItemRepository
 from app.repositories.item import ItemRepository
 from app.repositories.ledger_entry import LedgerEntryRepository
-from app.schemas.sync import LedgerEntryCreateOperation
+from app.schemas.sync import (
+    LedgerEntryCreateOperation,
+    LegacyLedgerEntrySyncData,
+)
 
 
 def apply_ledger_entry_create(
@@ -22,6 +25,11 @@ def apply_ledger_entry_create(
 ) -> None:
     data = operation.payload.entry
     items = operation.payload.items
+    party_id = (
+        data.customerId
+        if isinstance(data, LegacyLedgerEntrySyncData)
+        else data.partyId
+    )
 
     ledger_repository = LedgerEntryRepository(db)
     entry_item_repository = EntryItemRepository(db)
@@ -52,13 +60,13 @@ def apply_ledger_entry_create(
         )
 
     party = party_repository.get_by_id_and_shop(
-        party_id=data.partyId,
+        party_id=party_id,
         shop_id=shop_id,
     )
 
     if party is None:
         raise SyncConflictException(
-            f"Party {data.partyId} does not exist or is deleted"
+            f"Party {party_id} does not exist or is deleted"
         )
 
     device = device_repository.get_by_id_and_shop(
@@ -109,7 +117,7 @@ def apply_ledger_entry_create(
 
     entry = ledger_repository.create(
         entry_id=data.id,
-        party_id=data.partyId,
+        party_id=party_id,
         device_id=device_id,
         entry_type=entry_type,
         amount=data.amount,
