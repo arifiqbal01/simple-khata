@@ -24,6 +24,7 @@ class EntryItemRepository:
         unit: str | None = None,
         unit_price: int | None = None,
     ) -> EntryItem:
+        # Validate quantity when provided.
         if quantity is not None:
             if not quantity.is_finite() or quantity <= 0:
                 raise ValueError(
@@ -40,27 +41,37 @@ class EntryItemRepository:
                     "quantity exceeds the supported range"
                 )
 
+        # Unit price can be zero, but not negative.
         if unit_price is not None and unit_price < 0:
             raise ValueError(
                 "unit_price cannot be negative"
             )
 
+        # Legacy name-only items have no pricing details.
+        # Preserve NULL instead of inventing an amount.
         if amount is None:
-            if quantity is None or unit_price is None:
+            if quantity is None and unit_price is None:
+                pass
+
+            elif quantity is not None and unit_price is not None:
+                amount = int(
+                    (quantity * Decimal(unit_price)).quantize(
+                        Decimal("1"),
+                        rounding=ROUND_HALF_UP,
+                    )
+                )
+
+            else:
                 raise ValueError(
-                    "Provide amount or both quantity and unit_price"
+                    "Provide both quantity and unit_price "
+                    "when calculating an item amount"
                 )
 
-            amount = int(
-                (quantity * Decimal(unit_price)).quantize(
-                    Decimal("1"),
-                    rounding=ROUND_HALF_UP,
-                )
-            )
-
-        if amount <= 0:
+        # Zero-value items are allowed.
+        # Negative amounts are never allowed.
+        if amount is not None and amount < 0:
             raise ValueError(
-                "amount must be greater than zero"
+                "amount cannot be negative"
             )
 
         entry_item = EntryItem(
@@ -87,7 +98,7 @@ class EntryItemRepository:
         statement = (
             select(EntryItem)
             .where(
-                EntryItem.ledger_entry_id == ledger_entry_id,
+                EntryItem.ledger_entry_id == ledger_entry_id
             )
             .order_by(EntryItem.id)
         )

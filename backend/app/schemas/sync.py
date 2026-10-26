@@ -167,7 +167,7 @@ class EntryItemSyncData(BaseModel):
     itemId: UUID | None = None
     itemName: str = Field(min_length=1, max_length=150)
 
-    amount: int | None = Field(default=None, gt=0)
+    amount: int | None = Field(default=None, ge=0)
 
     quantity: Decimal | None = Field(
         default=None,

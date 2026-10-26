@@ -26,8 +26,8 @@ class EntryItem(UUIDPrimaryKeyMixin, Base):
 
     __table_args__ = (
         CheckConstraint(
-            "amount > 0",
-            name="ck_entry_items_amount_positive",
+            "amount >= 0",
+            name="ck_entry_items_amount_nonnegative",
         ),
         CheckConstraint(
             "quantity IS NULL OR quantity > 0",

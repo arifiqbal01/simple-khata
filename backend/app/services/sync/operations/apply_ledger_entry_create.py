@@ -157,13 +157,14 @@ def _validate_entry_items(
             )
 
         if item.amount is None:
-            if item.quantity is None or item.unitPrice is None:
+            if (item.quantity is None) != (item.unitPrice is None):
                 raise SyncConflictException(
-                    "Entry item requires an amount or both quantity and unit price"
+                    "Entry item requires both quantity and unit price "
+                    "when either is supplied"
                 )
-        elif item.amount <= 0:
+        elif item.amount < 0:
             raise SyncConflictException(
-                "Entry item amount must be greater than zero"
+                "Entry item amount cannot be negative"
             )
 
         if item.itemId is None:
