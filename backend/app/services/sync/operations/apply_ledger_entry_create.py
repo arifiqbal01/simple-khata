@@ -153,7 +153,7 @@ def _validate_entry_items(
                 "Entry item name is required"
             )
 
-        if item.amount <= 0:
+        if item.amount is not None and item.amount <= 0:
             raise SyncConflictException(
                 "Entry item amount must be greater than zero"
             )
