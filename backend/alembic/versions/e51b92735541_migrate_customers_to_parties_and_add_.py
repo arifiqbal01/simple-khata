@@ -67,7 +67,7 @@ def upgrade() -> None:
     )
 
     # Keep CUSTOMER as the database default for compatibility
-    # with existing customer-only clients.
+    # with existing party-only clients.
 
     # 4. Add FK for the deleting device.
     op.create_foreign_key(
@@ -84,7 +84,7 @@ def upgrade() -> None:
         ["deleted_by_device_id"],
     )
 
-    # 5. Rename existing customer table constraints.
+    # 5. Rename existing party table constraints.
     op.execute(
         "ALTER TABLE parties "
         "RENAME CONSTRAINT customers_shop_id_fkey "
@@ -111,7 +111,7 @@ def upgrade() -> None:
         existing_nullable=False,
     )
 
-    # 7. Rename ledger foreign key and index.
+    # 7. Rename ledger foreign key and index.ts.
     op.execute(
         "ALTER TABLE ledger_entries "
         "RENAME CONSTRAINT ledger_entries_customer_id_fkey "
@@ -183,7 +183,7 @@ def downgrade() -> None:
         "RENAME TO ix_ledger_entries_customer_id"
     )
 
-    # 2. Restore customer constraint names.
+    # 2. Restore party constraint names.
     op.execute(
         "ALTER TABLE parties "
         "RENAME CONSTRAINT parties_shop_id_fkey "

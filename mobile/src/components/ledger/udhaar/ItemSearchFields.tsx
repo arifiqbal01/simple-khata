@@ -19,6 +19,7 @@ import {
 } from '@/components/ui';
 
 import type { Item } from '@/types/domain';
+
 import type {
   DraftUdhaarItem,
 } from '@/hooks/ledger/useAddUdhaar';
@@ -36,6 +37,10 @@ interface ItemSearchFieldsProps {
   onFocusField?: () => void;
 }
 
+function normalizeName(name: string): string {
+  return name.trim().toLocaleLowerCase();
+}
+
 export const ItemSearchFields = memo(
   function ItemSearchFields({
     drafts,
@@ -48,9 +53,8 @@ export const ItemSearchFields = memo(
     onAdd,
     onFocusField,
   }: ItemSearchFieldsProps) {
-    const [focusedId, setFocusedId] = useState<
-      string | null
-    >(null);
+    const [focusedId, setFocusedId] =
+      useState<string | null>(null);
 
     const selectedSet = useMemo(
       () => new Set(selectedItemIds),
@@ -81,9 +85,8 @@ export const ItemSearchFields = memo(
       <View className="mt-5">
         <View className="gap-4">
           {drafts.map((draft) => {
-            const query = draft.name
-              .trim()
-              .toLocaleLowerCase();
+            const name = draft.name.trim();
+            const query = normalizeName(name);
 
             const matches =
               focusedId === draft.id &&
@@ -91,15 +94,24 @@ export const ItemSearchFields = memo(
                 ? availableItems
                     .filter(
                       (item) =>
-                        item.name
-                          .toLocaleLowerCase()
-                          .includes(query) &&
+                        normalizeName(item.name).includes(
+                          query
+                        ) &&
                         !selectedSet.has(item.id)
                     )
                     .slice(0, 5)
                 : [];
 
+            const exactCatalogItem =
+              availableItems.find(
+                (item) =>
+                  normalizeName(item.name) === query
+              );
+
             const canConfirm = query.length > 0;
+
+            const isNewItem =
+              canConfirm && !exactCatalogItem;
 
             return (
               <View
@@ -121,26 +133,18 @@ export const ItemSearchFields = memo(
                     returnKeyType="done"
                     onSubmitEditing={() => {
                       if (canConfirm) {
-                        confirmDraft(draft.id);
+                        if (exactCatalogItem) {
+                          selectSuggestion(
+                            draft.id,
+                            exactCatalogItem
+                          );
+                        } else {
+                          confirmDraft(draft.id);
+                        }
                       }
                     }}
                     className="flex-1"
                   />
-
-                  {canConfirm ? (
-                    <Pressable
-                      onPress={() =>
-                        confirmDraft(draft.id)
-                      }
-                      accessibilityRole="button"
-                      accessibilityLabel={`Add ${draft.name}`}
-                      className="h-12 items-center justify-center rounded-xl bg-[#242422] px-3"
-                    >
-                      <AppText className="font-spline-semibold text-[13px] text-white">
-                        Done
-                      </AppText>
-                    </Pressable>
-                  ) : null}
 
                   <Pressable
                     onPress={() =>
@@ -178,9 +182,20 @@ export const ItemSearchFields = memo(
                             : ''
                         }`}
                       >
-                        <AppText className="flex-1 text-[15px] text-foreground">
-                          {item.name}
-                        </AppText>
+                        <View className="min-w-0 flex-1">
+                          <AppText className="text-[15px] text-foreground">
+                            {item.name}
+                          </AppText>
+
+                          {item.default_unit ? (
+                            <AppText className="mt-1 text-[12px] text-muted">
+                              {item.default_unit}
+                              {item.default_selling_price != null
+                                ? ` · Rs ${item.default_selling_price}`
+                                : ''}
+                            </AppText>
+                          ) : null}
+                        </View>
 
                         <Ionicons
                           name="add-circle-outline"
@@ -190,6 +205,66 @@ export const ItemSearchFields = memo(
                       </Pressable>
                     ))}
                   </View>
+                ) : null}
+
+                {isNewItem ? (
+                  <Pressable
+                    onPress={() =>
+                      confirmDraft(draft.id)
+                    }
+                    accessibilityRole="button"
+                    accessibilityLabel={`Add new item ${name}`}
+                    className="flex-row items-center rounded-xl border border-border bg-surface px-4 py-3"
+                  >
+                    <Ionicons
+                      name="add-circle-outline"
+                      size={21}
+                      color="#242422"
+                    />
+
+                    <View className="ml-3 flex-1">
+                      <AppText className="font-spline-medium text-[14px] text-foreground">
+                        Add new item
+                      </AppText>
+
+                      <AppText
+                        numberOfLines={1}
+                        className="mt-1 text-[12px] text-muted"
+                      >
+                        {name}
+                      </AppText>
+                    </View>
+
+                    <Ionicons
+                      name="chevron-forward"
+                      size={17}
+                      color="#777770"
+                    />
+                  </Pressable>
+                ) : null}
+
+                {canConfirm && exactCatalogItem ? (
+                  <Pressable
+                    onPress={() =>
+                      selectSuggestion(
+                        draft.id,
+                        exactCatalogItem
+                      )
+                    }
+                    accessibilityRole="button"
+                    accessibilityLabel={`Add ${exactCatalogItem.name}`}
+                    className="flex-row items-center self-start rounded-xl bg-[#242422] px-4 py-3"
+                  >
+                    <Ionicons
+                      name="checkmark"
+                      size={17}
+                      color="#FFFFFF"
+                    />
+
+                    <AppText className="ml-2 font-spline-semibold text-[13px] text-white">
+                      Select item
+                    </AppText>
+                  </Pressable>
                 ) : null}
               </View>
             );

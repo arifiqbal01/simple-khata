@@ -49,7 +49,7 @@ def upgrade() -> None:
     sa.PrimaryKeyConstraint('id')
     )
     op.create_index(op.f('ix_devices_shop_id'), 'devices', ['shop_id'], unique=False)
-    op.create_table('items',
+    op.create_table('item',
     sa.Column('shop_id', sa.UUID(), nullable=False),
     sa.Column('name', sa.String(length=150), nullable=False),
     sa.Column('id', sa.UUID(), nullable=False),
@@ -57,7 +57,7 @@ def upgrade() -> None:
     sa.ForeignKeyConstraint(['shop_id'], ['shops.id'], ),
     sa.PrimaryKeyConstraint('id')
     )
-    op.create_index(op.f('ix_items_shop_id'), 'items', ['shop_id'], unique=False)
+    op.create_index(op.f('ix_items_shop_id'), 'item', ['shop_id'], unique=False)
     op.create_table('ledger_entries',
     sa.Column('customer_id', sa.UUID(), nullable=False),
     sa.Column('device_id', sa.UUID(), nullable=False),
@@ -81,7 +81,7 @@ def upgrade() -> None:
     sa.Column('amount', sa.BigInteger(), nullable=False),
     sa.Column('id', sa.UUID(), nullable=False),
     sa.CheckConstraint('amount > 0', name='ck_entry_items_amount_positive'),
-    sa.ForeignKeyConstraint(['item_id'], ['items.id'], ),
+    sa.ForeignKeyConstraint(['item_id'], ['item.id'], ),
     sa.ForeignKeyConstraint(['ledger_entry_id'], ['ledger_entries.id'], ),
     sa.PrimaryKeyConstraint('id')
     )
@@ -125,9 +125,9 @@ def downgrade() -> None:
 
     op.drop_index(
         op.f("ix_items_shop_id"),
-        table_name="items",
+        table_name="item",
     )
-    op.drop_table("items")
+    op.drop_table("item")
 
     op.drop_index(
         op.f("ix_devices_shop_id"),

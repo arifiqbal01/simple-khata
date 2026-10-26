@@ -1,27 +1,43 @@
+
 from typing import TYPE_CHECKING
 from uuid import UUID
 
-from sqlalchemy import ForeignKey, String, UniqueConstraint
+from sqlalchemy import (
+    Enum,
+    ForeignKey,
+    String,
+    UniqueConstraint,
+)
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
-from sqlalchemy import Enum
-from app.models.enums import PartyType
+
 from app.db.base import Base
-from app.db.mixins import TimestampMixin, UUIDPrimaryKeyMixin
+from app.db.mixins import (
+    SoftDeleteMixin,
+    TimestampMixin,
+    UUIDPrimaryKeyMixin,
+)
+from app.models.enums import PartyType
 
 if TYPE_CHECKING:
     from app.models.ledger_entry import LedgerEntry
     from app.models.shop import Shop
+    from app.models.supplier_item import SupplierItem
 
 
-class Customer(UUIDPrimaryKeyMixin, TimestampMixin, Base):
-    __tablename__ = "customers"
+class Party(
+    UUIDPrimaryKeyMixin,
+    TimestampMixin,
+    SoftDeleteMixin,
+    Base,
+):
+    __tablename__ = "parties"
 
     __table_args__ = (
         UniqueConstraint(
             "shop_id",
             "phone",
-            name="uq_customers_shop_phone",
+            name="uq_parties_shop_phone",
         ),
     )
 
@@ -33,7 +49,10 @@ class Customer(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     )
 
     type: Mapped[PartyType] = mapped_column(
-        Enum(PartyType, name="party_type"),
+        Enum(
+            PartyType,
+            name="partytype",
+        ),
         nullable=False,
         default=PartyType.CUSTOMER,
         server_default=PartyType.CUSTOMER.value,
@@ -50,9 +69,14 @@ class Customer(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     )
 
     shop: Mapped["Shop"] = relationship(
-        back_populates="customers",
+        back_populates="parties",
     )
 
     ledger_entries: Mapped[list["LedgerEntry"]] = relationship(
-        back_populates="customer",
+        back_populates="party",
+    )
+
+    # Products, units, and prices configured for this supplier.
+    supplier_items: Mapped[list["SupplierItem"]] = relationship(
+        back_populates="supplier",
     )

@@ -1,5 +1,6 @@
-import { CustomerRepository } from '@/repositories/customer';
-import { LedgerRepository } from '@/repositories/ledger';
+
+import { PartyRepository } from '@/repositories/party/party';
+import { LedgerSummaryRepository } from '@/repositories/ledger/ledger-summary';
 
 export interface GetCustomerBalanceInput {
   shopId: string;
@@ -8,25 +9,37 @@ export interface GetCustomerBalanceInput {
 
 export class GetCustomerBalanceService {
   constructor(
-    private readonly ledgerRepository: LedgerRepository,
-    private readonly customerRepository: CustomerRepository
+    private readonly ledgerSummaryRepository: LedgerSummaryRepository,
+    private readonly partyRepository: PartyRepository
   ) {}
 
   async execute(
     input: GetCustomerBalanceInput
   ): Promise<number> {
-    const customer = await this.customerRepository.getByIdAndShop(
-      input.customerId,
-      input.shopId
-    );
+    const shopId = input.shopId.trim();
+    const customerId = input.customerId.trim();
 
-    if (!customer) {
+    if (!shopId) {
+      throw new Error('Shop ID is required');
+    }
+
+    if (!customerId) {
+      throw new Error('Customer ID is required');
+    }
+
+    const customer =
+      await this.partyRepository.getByIdAndShop(
+        customerId,
+        shopId
+      );
+
+    if (!customer || customer.type !== 'CUSTOMER') {
       throw new Error('Customer not found');
     }
 
-    return this.ledgerRepository.getCustomerBalance(
-      input.shopId,
-      input.customerId
+    return this.ledgerSummaryRepository.getCustomerBalance(
+      shopId,
+      customerId
     );
   }
 }

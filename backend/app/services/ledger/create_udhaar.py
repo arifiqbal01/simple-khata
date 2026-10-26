@@ -1,3 +1,4 @@
+
 from uuid import UUID
 
 from sqlalchemy.exc import IntegrityError
@@ -7,9 +8,9 @@ from app.core.exceptions import (
     ConflictException,
     NotFoundException,
 )
-from app.models.enums import LedgerEntryType
+from app.models.enums import LedgerEntryType, PartyType
 from app.models.ledger_entry import LedgerEntry
-from app.repositories.customer import CustomerRepository
+from app.repositories.party_repository import PartyRepository
 from app.repositories.device import DeviceRepository
 from app.repositories.entry_item import EntryItemRepository
 from app.repositories.item import ItemRepository
@@ -24,14 +25,14 @@ class CreateUdhaarService:
         ledger_repository: LedgerEntryRepository,
         entry_item_repository: EntryItemRepository,
         item_repository: ItemRepository,
-        customer_repository: CustomerRepository,
+        party_repository: PartyRepository,
         device_repository: DeviceRepository,
     ) -> None:
         self.db = db
         self.ledger_repository = ledger_repository
         self.entry_item_repository = entry_item_repository
         self.item_repository = item_repository
-        self.customer_repository = customer_repository
+        self.party_repository = party_repository
         self.device_repository = device_repository
 
     def execute(
@@ -40,13 +41,18 @@ class CreateUdhaarService:
         shop_id: UUID,
         data: UdhaarCreate,
     ) -> LedgerEntry:
-        customer = self.customer_repository.get_by_id_and_shop(
-            customer_id=data.customer_id,
+        party = self.party_repository.get_by_id_and_shop(
+            party_id=data.party_id,
             shop_id=shop_id,
         )
 
-        if customer is None:
-            raise NotFoundException("Customer not found")
+        if party is None:
+            raise NotFoundException("Party not found")
+
+        if party.type != PartyType.CUSTOMER:
+            raise ConflictException(
+                "Udhaar entries can only be created for customers"
+            )
 
         device = self.device_repository.get_by_id_and_shop(
             device_id=data.device_id,
@@ -56,7 +62,7 @@ class CreateUdhaarService:
         if device is None:
             raise NotFoundException("Device not found")
 
-        # Validate catalog items before creating anything.
+        # Validate catalog item before creating anything.
         for item in data.items:
             if item.item_id is None:
                 continue
@@ -74,7 +80,7 @@ class CreateUdhaarService:
         try:
             entry = self.ledger_repository.create(
                 entry_id=data.id,
-                customer_id=data.customer_id,
+                party_id=data.party_id,
                 device_id=data.device_id,
                 entry_type=LedgerEntryType.UDHAAR,
                 amount=data.amount,

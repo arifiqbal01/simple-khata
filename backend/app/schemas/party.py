@@ -1,11 +1,16 @@
+
 from datetime import datetime
 from uuid import UUID, uuid4
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.models.enums import PartyType
 
-class CustomerCreate(BaseModel):
+
+class PartyCreate(BaseModel):
     id: UUID = Field(default_factory=uuid4)
+
+    type: PartyType = PartyType.CUSTOMER
 
     name: str = Field(
         min_length=1,
@@ -18,7 +23,7 @@ class CustomerCreate(BaseModel):
     )
 
 
-class CustomerUpdate(BaseModel):
+class PartyUpdate(BaseModel):
     name: str | None = Field(
         default=None,
         min_length=1,
@@ -31,11 +36,16 @@ class CustomerUpdate(BaseModel):
     )
 
 
-class CustomerRead(BaseModel):
+class PartyDelete(BaseModel):
+    id: UUID
+
+
+class PartyRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: UUID
     shop_id: UUID
+    type: PartyType
     name: str
     phone: str | None
     created_at: datetime

@@ -1,3 +1,4 @@
+
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query, status
@@ -5,35 +6,38 @@ from sqlalchemy.orm import Session
 
 from app.api.dependencies import get_shop_id
 from app.db.session import get_db
-from app.models.party import Customer
-from app.repositories.party_repository import CustomerRepository
+from app.models.enums import PartyType
+from app.models.party import Party
+from app.repositories.party_repository import PartyRepository
 from app.schemas.party import (
-    CustomerCreate,
-    CustomerRead,
-    CustomerUpdate,
+    PartyCreate,
+    PartyRead,
+    PartyUpdate,
 )
 from app.services.party import (
-    CreateCustomerService,
-    GetCustomerService,
-    SearchCustomersService,
-    UpdateCustomerService,
+    CreatePartyService,
+    GetPartyService,
+    SearchPartiesService,
+    UpdatePartyService,
+    DeletePartyService,
 )
 
-router = APIRouter(prefix="/customers")
+router = APIRouter(prefix="/parties")
+
 
 @router.post(
     "",
-    response_model=CustomerRead,
+    response_model=PartyRead,
     status_code=status.HTTP_201_CREATED,
 )
-def create_customer(
-    data: CustomerCreate,
+def create_party(
+    data: PartyCreate,
     shop_id: UUID = Depends(get_shop_id),
     db: Session = Depends(get_db),
-) -> Customer:
-    repository = CustomerRepository(db)
+) -> Party:
+    repository = PartyRepository(db)
 
-    service = CreateCustomerService(
+    service = CreatePartyService(
         db=db,
         repository=repository,
     )
@@ -46,12 +50,16 @@ def create_customer(
 
 @router.get(
     "",
-    response_model=list[CustomerRead],
+    response_model=list[PartyRead],
 )
-def list_customers(
+def list_parties(
     query: str | None = Query(
         default=None,
         max_length=150,
+    ),
+    party_type: PartyType | None = Query(
+        default=None,
+        alias="type",
     ),
     limit: int = Query(
         default=50,
@@ -64,61 +72,86 @@ def list_customers(
     ),
     shop_id: UUID = Depends(get_shop_id),
     db: Session = Depends(get_db),
-) -> list[Customer]:
-    repository = CustomerRepository(db)
+) -> list[Party]:
+    repository = PartyRepository(db)
 
-    service = SearchCustomersService(
+    service = SearchPartiesService(
         repository=repository,
     )
 
     return service.execute(
         shop_id=shop_id,
         query=query,
+        party_type=party_type,
         limit=limit,
         offset=offset,
     )
 
 
 @router.get(
-    "/{customer_id}",
-    response_model=CustomerRead,
+    "/{party_id}",
+    response_model=PartyRead,
 )
-def get_customer(
-    customer_id: UUID,
+def get_party(
+    party_id: UUID,
     shop_id: UUID = Depends(get_shop_id),
     db: Session = Depends(get_db),
-) -> Customer:
-    repository = CustomerRepository(db)
+) -> Party:
+    repository = PartyRepository(db)
 
-    service = GetCustomerService(
+    service = GetPartyService(
         repository=repository,
     )
 
     return service.execute(
         shop_id=shop_id,
-        customer_id=customer_id,
+        party_id=party_id,
     )
 
 
 @router.patch(
-    "/{customer_id}",
-    response_model=CustomerRead,
+    "/{party_id}",
+    response_model=PartyRead,
 )
-def update_customer(
-    customer_id: UUID,
-    data: CustomerUpdate,
+def update_party(
+    party_id: UUID,
+    data: PartyUpdate,
     shop_id: UUID = Depends(get_shop_id),
     db: Session = Depends(get_db),
-) -> Customer:
-    repository = CustomerRepository(db)
+) -> Party:
+    repository = PartyRepository(db)
 
-    service = UpdateCustomerService(
+    service = UpdatePartyService(
         db=db,
         repository=repository,
     )
 
     return service.execute(
         shop_id=shop_id,
-        customer_id=customer_id,
+        party_id=party_id,
         data=data,
+    )
+
+
+@router.delete(
+    "/{party_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+def delete_party(
+    party_id: UUID,
+    device_id: UUID = Query(...),
+    shop_id: UUID = Depends(get_shop_id),
+    db: Session = Depends(get_db),
+) -> None:
+    repository = PartyRepository(db)
+
+    service = DeletePartyService(
+        db=db,
+        repository=repository,
+    )
+
+    service.execute(
+        shop_id=shop_id,
+        party_id=party_id,
+        device_id=device_id,
     )

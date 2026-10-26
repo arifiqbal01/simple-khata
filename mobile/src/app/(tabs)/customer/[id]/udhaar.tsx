@@ -2,6 +2,7 @@
 import React, {
   useCallback,
   useEffect,
+  useMemo,
   useRef,
   useState,
 } from 'react';
@@ -37,22 +38,30 @@ import { ItemSearchFields } from '@/components/ledger/udhaar/ItemSearchFields';
 
 import { useAddUdhaar } from '@/hooks/ledger/useAddUdhaar';
 
+function firstParam(
+  value: string | string[] | undefined
+): string | undefined {
+  return Array.isArray(value) ? value[0] : value;
+}
+
+function formatMoney(value: number): string {
+  return `Rs ${value.toLocaleString('en-PK')}`;
+}
+
 export default function AddUdhaarScreen() {
   const params = useLocalSearchParams<{
     id?: string | string[];
   }>();
 
-  const customerId = Array.isArray(params.id)
-    ? params.id[0]
-    : params.id;
+  const customerId = firstParam(params.id);
 
   const {
     customer,
     balance,
+
     amount,
     setAmount,
 
-    items,
     availableItems,
     quickItems,
     selectedItems,
@@ -63,50 +72,75 @@ export default function AddUdhaarScreen() {
     error,
     validAmount,
     parsedAmount,
+    itemizedTotal,
+    hasSelectedItems,
 
     addItemRow,
     removeItem,
     clearItems,
     changeItemName,
+    changeItemQuantity,
+    changeItemUnit,
+    changeItemUnitPrice,
     selectItem,
     toggleQuickItem,
-
-    save,
     confirmItem,
+    save,
   } = useAddUdhaar(customerId);
 
   const scrollRef = useRef<ScrollView>(null);
+  const savingRef = useRef(false);
 
   const [keyboardVisible, setKeyboardVisible] =
     useState(false);
 
   useEffect(() => {
-    const show = Keyboard.addListener(
+    const showSubscription = Keyboard.addListener(
       'keyboardDidShow',
       () => setKeyboardVisible(true)
     );
 
-    const hide = Keyboard.addListener(
+    const hideSubscription = Keyboard.addListener(
       'keyboardDidHide',
       () => setKeyboardVisible(false)
     );
 
     return () => {
-      show.remove();
-      hide.remove();
+      showSubscription.remove();
+      hideSubscription.remove();
     };
   }, []);
 
-  // Always return to Home instead of previous
-  // customer or Add Udhaar screens.
- const handleClose = useCallback(() => {
-  Keyboard.dismiss();
-  router.navigate('/(tabs)');
-}, []);
+  const selectedItemIds = useMemo(
+    () =>
+      selectedItems
+        .map((item) => item.itemId)
+        .filter(
+          (id): id is string => id !== null
+        ),
+    [selectedItems]
+  );
+
+  const selectedNames = useMemo(
+    () => selectedItems.map((item) => item.name),
+    [selectedItems]
+  );
+
+  const handleClose = useCallback(() => {
+    Keyboard.dismiss();
+    router.replace('/');
+  }, []);
 
   const handleSave = useCallback(async () => {
-    if (!validAmount || saving) return;
+    if (
+      !validAmount ||
+      saving ||
+      savingRef.current
+    ) {
+      return;
+    }
 
+    savingRef.current = true;
     Keyboard.dismiss();
 
     try {
@@ -117,7 +151,7 @@ export default function AddUdhaarScreen() {
       }
     } catch (cause) {
       console.error(
-        '[add-udhaar] save failed',
+        '[add-udhaar] Save failed:',
         cause
       );
 
@@ -129,6 +163,8 @@ export default function AddUdhaarScreen() {
             ? cause.message
             : 'Please try again.',
       });
+    } finally {
+      savingRef.current = false;
     }
   }, [
     validAmount,
@@ -154,7 +190,10 @@ export default function AddUdhaarScreen() {
     return (
       <Screen>
         <View className="flex-1 items-center justify-center">
-          <ActivityIndicator size="large" />
+          <ActivityIndicator
+            size="large"
+            color="#242422"
+          />
         </View>
       </Screen>
     );
@@ -169,6 +208,7 @@ export default function AddUdhaarScreen() {
             hitSlop={10}
             accessibilityRole="button"
             accessibilityLabel="Go to Home"
+            className="h-10 w-9 items-center justify-center"
           >
             <Ionicons
               name="arrow-back"
@@ -177,31 +217,20 @@ export default function AddUdhaarScreen() {
             />
           </Pressable>
 
-          <AppText className="ml-4 font-spline-semibold text-[18px]">
+          <AppText className="ml-4 font-spline-semibold text-[18px] text-foreground">
             Add Udhaar
           </AppText>
         </View>
 
         <View className="flex-1 items-center justify-center px-5">
           <AppText className="text-center text-udhaar">
-            {error ?? 'Customer could not be loaded.'}
+            {error ??
+              'Customer could not be loaded.'}
           </AppText>
         </View>
       </Screen>
     );
   }
-
-  const selectedItemIds = items
-    .map((item) => item.itemId)
-    .filter(
-      (id): id is string => id !== null
-    );
-
-  const selectedNames = items
-    .filter(
-      (item) => item.name.trim().length > 0
-    )
-    .map((item) => item.name);
 
   return (
     <Screen>
@@ -210,6 +239,7 @@ export default function AddUdhaarScreen() {
         <View className="flex-row items-center gap-3">
           <Pressable
             onPress={handleClose}
+            disabled={saving}
             hitSlop={10}
             accessibilityRole="button"
             accessibilityLabel="Go to Home"
@@ -229,7 +259,7 @@ export default function AddUdhaarScreen() {
 
         <SaveButton
           loading={saving}
-          disabled={!validAmount}
+          disabled={!validAmount || saving}
           accessibilityLabel="Save Udhaar"
           onPress={() => {
             void handleSave();
@@ -261,79 +291,93 @@ export default function AddUdhaarScreen() {
           }
           showsVerticalScrollIndicator={false}
         >
-          {/* Customer + current balance */}
-          <View className="flex-row items-center justify-between gap-3 border-b border-border px-5 py-5">
+          {/* Customer and balance */}
+          <View className="flex-row items-center justify-between gap-3 border-b border-border px-5 py-4">
             <View className="min-w-0 flex-1">
               <AppText
                 numberOfLines={2}
-                className="font-spline-bold text-[23px] leading-[29px] text-foreground"
+                className="font-spline-semibold text-[20px] text-foreground"
               >
                 {customer.name}
               </AppText>
             </View>
 
             <View className="items-end">
-              <AppText className="font-spline-semibold text-[20px] text-foreground">
-                Rs {balance.toLocaleString()}
+              <AppText className="font-spline-semibold text-[18px] text-foreground">
+                {formatMoney(balance)}
               </AppText>
 
-              <AppText className="mt-1 font-sans text-[12px] text-muted">
+              <AppText className="mt-1 text-[12px] text-muted">
                 Current balance
               </AppText>
             </View>
           </View>
 
           <View className="px-5">
-            {/* Amount */}
-            <View className="pt-6">
-              <MoneyInput
-                label="Amount"
-                value={amount}
-                onChangeText={setAmount}
-                autoFocus
-              />
+            {/* Compact amount */}
+            <View className="pt-5">
+              {hasSelectedItems ? (
+                <View className="flex-row items-center justify-between border-b border-border py-3">
+                  <AppText className="font-spline-medium text-[15px] text-muted">
+                    Calculated Udhaar
+                  </AppText>
+
+                  <AppText className="font-spline-semibold text-[21px] text-foreground">
+                    {formatMoney(itemizedTotal)}
+                  </AppText>
+                </View>
+              ) : (
+                <MoneyInput
+                  label="Amount"
+                  value={amount}
+                  onChangeText={setAmount}
+                />
+              )}
             </View>
 
-            {/* Items heading */}
-            <View className="mt-8 flex-row items-center justify-between">
-              <View className="flex-row items-baseline gap-1.5">
-                <AppText className="font-spline-semibold text-[17px] text-foreground">
+            {/* Selected items */}
+            <View className="mt-6">
+              <View className="flex-row items-center justify-between">
+                <AppText className="font-spline-semibold text-[16px] text-foreground">
                   Items
                 </AppText>
 
-                <AppText className="text-[13px] text-muted">
-                  Optional
-                </AppText>
+                {selectedItems.length > 0 ? (
+                  <Pressable
+                    onPress={clearItems}
+                    disabled={saving}
+                    hitSlop={8}
+                    accessibilityRole="button"
+                    accessibilityLabel="Clear all items"
+                  >
+                    <AppText className="font-spline-medium text-[12px] text-udhaar">
+                      Clear all
+                    </AppText>
+                  </Pressable>
+                ) : null}
               </View>
 
-              {selectedItems.length > 0 ? (
-                <Pressable
-                  onPress={clearItems}
-                  hitSlop={8}
-                  accessibilityRole="button"
-                  accessibilityLabel="Clear all items"
-                >
-                  <AppText className="font-spline-medium text-[13px] text-udhaar">
-                    Clear all
-                  </AppText>
-                </Pressable>
-              ) : null}
+              <SelectedItems
+                items={selectedItems}
+                onRemove={removeItem}
+                onChangeQuantity={
+                  changeItemQuantity
+                }
+                onChangeUnit={changeItemUnit}
+                onChangeUnitPrice={
+                  changeItemUnitPrice
+                }
+              />
             </View>
 
-            {/* Selected item summary */}
-            <SelectedItems
-              items={selectedItems}
-              onRemove={removeItem}
-            />
-
-            {/* Customer/time-based suggestions */}
+            {/* Quick Items */}
             <QuickItems
               items={quickItems}
               selectedNames={selectedNames}
               onToggle={toggleQuickItem}
             />
 
-            {/* Custom item entry and catalog search */}
+            {/* Search / Add item */}
             <ItemSearchFields
               drafts={draftItems}
               availableItems={availableItems}
@@ -346,19 +390,27 @@ export default function AddUdhaarScreen() {
               onFocusField={scrollToItems}
             />
 
-            {/* Amount summary */}
+            {/* Minimal balance summary */}
             {validAmount ? (
-              <View className="mt-8 border-t border-border pt-4">
-                <View className="flex-row items-center justify-between">
-                  <AppText className="text-[13px] text-muted">
-                    Udhaar amount
-                  </AppText>
+              <View className="mt-6 flex-row items-center justify-between border-t border-border py-4">
+                <AppText className="text-[13px] text-muted">
+                  Balance after Udhaar
+                </AppText>
 
-                  <AppText className="font-spline-semibold text-[16px] text-udhaar">
-                    Rs {parsedAmount.toLocaleString()}
-                  </AppText>
-                </View>
+                <AppText className="font-spline-semibold text-[16px] text-foreground">
+                  {formatMoney(
+                    balance + parsedAmount
+                  )}
+                </AppText>
               </View>
+            ) : null}
+
+            {hasSelectedItems &&
+            !validAmount ? (
+              <AppText className="mt-4 text-[12px] text-udhaar">
+                Enter a valid quantity, unit and
+                selling price for every selected item.
+              </AppText>
             ) : null}
           </View>
         </ScrollView>

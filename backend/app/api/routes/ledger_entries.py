@@ -1,3 +1,4 @@
+
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query, status
@@ -6,22 +7,24 @@ from sqlalchemy.orm import Session
 from app.api.dependencies import get_shop_id
 from app.db.session import get_db
 from app.models.ledger_entry import LedgerEntry
-from app.repositories.customer import CustomerRepository
+from app.repositories.party_repository import PartyRepository
 from app.repositories.device import DeviceRepository
 from app.repositories.entry_item import EntryItemRepository
 from app.repositories.item import ItemRepository
 from app.repositories.ledger_entry import LedgerEntryRepository
 from app.schemas.ledger_entry import (
-    CustomerBalanceRead,
+    PartyBalanceRead,
     LedgerEntryDelete,
     LedgerEntryRead,
     PaymentCreate,
+    SupplyCreate,
     UdhaarCreate,
 )
 from app.services.ledger import (
     CreateUdhaarService,
+    CreateSupplyService,
     DeleteLedgerEntryService,
-    GetCustomerBalanceService,
+    GetPartyBalanceService,
     GetLedgerHistoryService,
     RecordPaymentService,
 )
@@ -44,7 +47,32 @@ def create_udhaar(
         ledger_repository=LedgerEntryRepository(db),
         entry_item_repository=EntryItemRepository(db),
         item_repository=ItemRepository(db),
-        customer_repository=CustomerRepository(db),
+        party_repository=PartyRepository(db),
+        device_repository=DeviceRepository(db),
+    )
+
+    return service.execute(
+        shop_id=shop_id,
+        data=data,
+    )
+
+
+@router.post(
+    "/ledger/supply",
+    response_model=LedgerEntryRead,
+    status_code=status.HTTP_201_CREATED,
+)
+def create_supply(
+    data: SupplyCreate,
+    shop_id: UUID = Depends(get_shop_id),
+    db: Session = Depends(get_db),
+) -> LedgerEntry:
+    service = CreateSupplyService(
+        db=db,
+        ledger_repository=LedgerEntryRepository(db),
+        entry_item_repository=EntryItemRepository(db),
+        item_repository=ItemRepository(db),
+        party_repository=PartyRepository(db),
         device_repository=DeviceRepository(db),
     )
 
@@ -67,7 +95,7 @@ def record_payment(
     service = RecordPaymentService(
         db=db,
         ledger_repository=LedgerEntryRepository(db),
-        customer_repository=CustomerRepository(db),
+        party_repository=PartyRepository(db),
         device_repository=DeviceRepository(db),
     )
 
@@ -78,11 +106,11 @@ def record_payment(
 
 
 @router.get(
-    "/customers/{customer_id}/ledger",
+    "/parties/{party_id}/ledger",
     response_model=list[LedgerEntryRead],
 )
-def get_customer_history(
-    customer_id: UUID,
+def get_party_history(
+    party_id: UUID,
     limit: int = Query(
         default=100,
         ge=1,
@@ -97,40 +125,41 @@ def get_customer_history(
 ) -> list[LedgerEntry]:
     service = GetLedgerHistoryService(
         ledger_repository=LedgerEntryRepository(db),
-        customer_repository=CustomerRepository(db),
+        party_repository=PartyRepository(db),
     )
 
     return service.execute(
         shop_id=shop_id,
-        customer_id=customer_id,
+        party_id=party_id,
         limit=limit,
         offset=offset,
     )
 
 
 @router.get(
-    "/customers/{customer_id}/balance",
-    response_model=CustomerBalanceRead,
+    "/parties/{party_id}/balance",
+    response_model=PartyBalanceRead,
 )
-def get_customer_balance(
-    customer_id: UUID,
+def get_party_balance(
+    party_id: UUID,
     shop_id: UUID = Depends(get_shop_id),
     db: Session = Depends(get_db),
-) -> CustomerBalanceRead:
-    service = GetCustomerBalanceService(
+) -> PartyBalanceRead:
+    service = GetPartyBalanceService(
         ledger_repository=LedgerEntryRepository(db),
-        customer_repository=CustomerRepository(db),
+        party_repository=PartyRepository(db),
     )
 
     balance = service.execute(
         shop_id=shop_id,
-        customer_id=customer_id,
+        party_id=party_id,
     )
 
-    return CustomerBalanceRead(
-        customer_id=customer_id,
+    return PartyBalanceRead(
+        party_id=party_id,
         balance=balance,
     )
+
 
 @router.delete(
     "/ledger/{entry_id}",
@@ -145,7 +174,7 @@ def delete_ledger_entry(
     service = DeleteLedgerEntryService(
         db=db,
         ledger_repository=LedgerEntryRepository(db),
-        customer_repository=CustomerRepository(db),
+        party_repository=PartyRepository(db),
         device_repository=DeviceRepository(db),
     )
 

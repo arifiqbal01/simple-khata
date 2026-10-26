@@ -1,14 +1,15 @@
+
 from uuid import UUID
 
 from app.core.exceptions import NotFoundException
-from app.models.party import Customer
-from app.repositories.party_repository import CustomerRepository
+from app.models.party import Party
+from app.repositories.party_repository import PartyRepository
 
 
-class GetCustomerService:
+class GetPartyService:
     def __init__(
         self,
-        repository: CustomerRepository,
+        repository: PartyRepository,
     ) -> None:
         self.repository = repository
 
@@ -16,14 +17,14 @@ class GetCustomerService:
         self,
         *,
         shop_id: UUID,
-        customer_id: UUID,
-    ) -> Customer:
-        customer = self.repository.get_by_id_and_shop(
-            customer_id=customer_id,
+        party_id: UUID,
+    ) -> Party:
+        party = self.repository.get_by_id_and_shop(
+            party_id=party_id,
             shop_id=shop_id,
         )
 
-        if customer is None:
-            raise NotFoundException("Customer not found")
+        if party is None:
+            raise NotFoundException("Party not found")
 
-        return customer
+        return party

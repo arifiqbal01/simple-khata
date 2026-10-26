@@ -524,6 +524,7 @@ dependencies = [
     { name = "fastapi" },
     { name = "psycopg", extra = ["binary"] },
     { name = "pydantic-settings" },
+    { name = "python-dotenv" },
     { name = "sqlalchemy" },
     { name = "uvicorn", extra = ["standard"] },
 ]
@@ -540,6 +541,7 @@ requires-dist = [
     { name = "fastapi" },
     { name = "psycopg", extras = ["binary"] },
     { name = "pydantic-settings" },
+    { name = "python-dotenv", specifier = ">=1.2.4" },
     { name = "sqlalchemy" },
     { name = "uvicorn", extras = ["standard"] },
 ]

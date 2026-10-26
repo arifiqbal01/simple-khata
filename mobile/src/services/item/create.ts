@@ -1,14 +1,19 @@
-import { getDatabase } from '@/db/database';
-import { ItemRepository } from '@/repositories/item';
-import { SyncOutboxRepository } from '@/repositories/sync-outbox';
+
+import * as Crypto from 'expo-crypto';
+
+import { runWriteTransaction } from '@/db/write-transaction';
+import { ItemRepository } from '@/repositories/item/item';
+import { SyncOutboxRepository } from '@/repositories/sync/sync-outbox';
 import { requestSync } from '@/services/sync/sync-coordinator';
 import type { Item } from '@/types/domain';
-import * as Crypto from 'expo-crypto';
 
 export interface CreateItemInput {
   shopId: string;
   deviceId: string;
   name: string;
+
+  defaultUnit?: string | null;
+  defaultSellingPrice?: number | null;
 }
 
 export class CreateItemService {
@@ -17,16 +22,16 @@ export class CreateItemService {
     private readonly syncOutboxRepository: SyncOutboxRepository
   ) {}
 
-  async execute(
-    input: CreateItemInput
-  ): Promise<Item> {
+  async execute(input: CreateItemInput): Promise<Item> {
+    const shopId = input.shopId.trim();
+    const deviceId = input.deviceId.trim();
     const name = input.name.trim();
 
-    if (!input.shopId) {
+    if (!shopId) {
       throw new Error('Shop ID is required');
     }
 
-    if (!input.deviceId) {
+    if (!deviceId) {
       throw new Error('Device ID is required');
     }
 
@@ -40,20 +45,53 @@ export class CreateItemService {
       );
     }
 
+    const defaultUnit =
+      input.defaultUnit?.trim() || null;
+
+    if (defaultUnit && defaultUnit.length > 30) {
+      throw new Error(
+        'Default unit cannot exceed 30 characters'
+      );
+    }
+
+    const defaultSellingPrice =
+      input.defaultSellingPrice ?? null;
+
+    if (
+      defaultSellingPrice !== null &&
+      (
+        !Number.isSafeInteger(defaultSellingPrice) ||
+        defaultSellingPrice < 0
+      )
+    ) {
+      throw new Error(
+        'Default selling price must be a non-negative integer'
+      );
+    }
+
     const now = new Date().toISOString();
 
     const item: Item = {
       id: Crypto.randomUUID(),
-      shop_id: input.shopId,
+      shop_id: shopId,
       name,
       created_at: now,
+      default_unit: defaultUnit,
+      default_selling_price: defaultSellingPrice,
+      deleted_at: null,
+      deleted_by_device_id: null,
     };
 
     const operationId = Crypto.randomUUID();
 
-    const db = await getDatabase();
-
-    await db.withTransactionAsync(async () => {
+    /*
+     * Create the item and enqueue its sync operation
+     * in the same SQLite transaction.
+     *
+     * runWriteTransaction coordinates this write
+     * with other users of the same helper.
+     */
+    await runWriteTransaction(async (db) => {
       await this.itemRepository.createWithDatabase(
         db,
         {
@@ -61,6 +99,9 @@ export class CreateItemService {
           shopId: item.shop_id,
           name: item.name,
           createdAt: item.created_at,
+          defaultUnit: item.default_unit,
+          defaultSellingPrice:
+            item.default_selling_price,
         }
       );
 
@@ -68,31 +109,37 @@ export class CreateItemService {
         db,
         {
           id: operationId,
-          shopId: input.shopId,
-          deviceId: input.deviceId,
+          shopId,
+          deviceId,
 
           operationType: 'ITEM_CREATE',
           entityType: 'ITEM',
           entityId: item.id,
 
           payload: {
-              item: {
-                id: item.id,
-                shopId: item.shop_id,
-                name: item.name,
-                createdAt: item.created_at,
-                updatedAt: now,
-              },
+            item: {
+              id: item.id,
+              shopId: item.shop_id,
+              name: item.name,
+              defaultUnit: item.default_unit,
+              defaultSellingPrice:
+                item.default_selling_price,
+              createdAt: item.created_at,
+              updatedAt: now,
             },
+          },
 
           createdAt: now,
         }
       );
     });
 
-    // Local mutation + outbox transaction has committed.
-    // Sync is intentionally fire-and-forget so network
-    // failure never causes the local item creation to fail.
+    /*
+     * Sync starts only after the local transaction
+     * commits successfully.
+     *
+     * Network failure must not undo local creation.
+     */
     void requestSync().catch((error) => {
       console.warn(
         '[sync-trigger] item-create failed',

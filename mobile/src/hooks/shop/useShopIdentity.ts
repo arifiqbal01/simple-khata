@@ -1,19 +1,24 @@
 
-import { useCallback, useEffect, useState } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from 'react';
 
-import { getDatabase } from '@/db/database';
-import { ShopRepository } from '@/repositories/shop';
-import { DeviceRepository } from '@/repositories/device';
+import { ShopRepository } from '@/repositories/bootstrap/shop';
+import { DeviceRepository } from '@/repositories/bootstrap/device';
+import { LocalIdentityRepository } from '@/repositories/bootstrap/local-identity';
 
-import type { Shop, Device } from '@/types/domain';
+import type {
+  Shop,
+  Device,
+} from '@/types/domain';
 
 const shopRepository = new ShopRepository();
 const deviceRepository = new DeviceRepository();
-
-interface LocalIdentityRow {
-  shop_id: string;
-  device_id: string;
-}
+const localIdentityRepository =
+  new LocalIdentityRepository();
 
 export interface ShopIdentity {
   shop: Shop | null;
@@ -28,58 +33,99 @@ export interface ShopIdentity {
 }
 
 export function useShopIdentity(): ShopIdentity {
-  const [shop, setShop] = useState<Shop | null>(null);
-  const [device, setDevice] = useState<Device | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [shop, setShop] =
+    useState<Shop | null>(null);
 
-  const reload = useCallback(async () => {
-    try {
-      setError(null);
+  const [device, setDevice] =
+    useState<Device | null>(null);
 
-      const db = await getDatabase();
+  const [loading, setLoading] =
+    useState(true);
 
-      const identity =
-        await db.getFirstAsync<LocalIdentityRow>(
-          `
-            SELECT shop_id, device_id
-            FROM local_identity
-            LIMIT 1
-          `
+  const [error, setError] =
+    useState<string | null>(null);
+
+  const mountedRef = useRef(false);
+  const requestIdRef = useRef(0);
+
+  const reload = useCallback(
+    async (): Promise<void> => {
+      const requestId = ++requestIdRef.current;
+
+      try {
+        if (mountedRef.current) {
+          setError(null);
+        }
+
+        const identity =
+          await localIdentityRepository.get();
+
+        if (!identity) {
+          if (
+            mountedRef.current &&
+            requestId === requestIdRef.current
+          ) {
+            setShop(null);
+            setDevice(null);
+          }
+
+          return;
+        }
+
+        const [currentShop, currentDevice] =
+          await Promise.all([
+            shopRepository.getById(identity.shopId),
+            deviceRepository.getById(identity.deviceId),
+          ]);
+
+        if (
+          !mountedRef.current ||
+          requestId !== requestIdRef.current
+        ) {
+          return;
+        }
+
+        setShop(currentShop);
+        setDevice(currentDevice);
+      } catch (cause) {
+        if (
+          !mountedRef.current ||
+          requestId !== requestIdRef.current
+        ) {
+          return;
+        }
+
+        console.error(
+          '[shop-identity] Load failed:',
+          cause
         );
 
-      if (!identity) {
-        setShop(null);
-        setDevice(null);
-        return;
+        setError(
+          cause instanceof Error
+            ? cause.message
+            : 'Could not load shop identity.'
+        );
+      } finally {
+        if (
+          mountedRef.current &&
+          requestId === requestIdRef.current
+        ) {
+          setLoading(false);
+        }
       }
-
-      const [currentShop, currentDevice] =
-        await Promise.all([
-          shopRepository.getById(identity.shop_id),
-          deviceRepository.getById(identity.device_id),
-        ]);
-
-      setShop(currentShop);
-      setDevice(currentDevice);
-    } catch (cause) {
-      console.error(
-        '[shop-identity] load failed',
-        cause
-      );
-
-      setError(
-        cause instanceof Error
-          ? cause.message
-          : 'Could not load shop identity.'
-      );
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+    },
+    []
+  );
 
   useEffect(() => {
+    mountedRef.current = true;
+
     void reload();
+
+    return () => {
+      mountedRef.current = false;
+      requestIdRef.current += 1;
+    };
   }, [reload]);
 
   return {

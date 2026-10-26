@@ -1,5 +1,5 @@
 
-import type { LedgerHistoryWithBalance } from '@/repositories/ledger';
+import type { LedgerHistoryWithBalance } from '@/repositories/ledger/ledger-history';
 
 export interface LedgerSection {
   title: string;

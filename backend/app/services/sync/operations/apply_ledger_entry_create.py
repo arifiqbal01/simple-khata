@@ -1,10 +1,11 @@
+
 from uuid import UUID
 
 from sqlalchemy.orm import Session
 
 from app.core.exceptions import SyncConflictException
-from app.models.enums import LedgerEntryType
-from app.repositories.customer import CustomerRepository
+from app.models.enums import LedgerEntryType, PartyType
+from app.repositories.party_repository import PartyRepository
 from app.repositories.device import DeviceRepository
 from app.repositories.entry_item import EntryItemRepository
 from app.repositories.item import ItemRepository
@@ -24,7 +25,7 @@ def apply_ledger_entry_create(
 
     ledger_repository = LedgerEntryRepository(db)
     entry_item_repository = EntryItemRepository(db)
-    customer_repository = CustomerRepository(db)
+    party_repository = PartyRepository(db)
     device_repository = DeviceRepository(db)
     item_repository = ItemRepository(db)
 
@@ -43,23 +44,21 @@ def apply_ledger_entry_create(
             "Ledger entry amount must be greater than zero"
         )
 
-    existing = ledger_repository.get_by_id(
-        data.id
-    )
+    existing = ledger_repository.get_by_id(data.id)
 
     if existing is not None:
         raise SyncConflictException(
             f"Ledger entry {data.id} already exists"
         )
 
-    customer = customer_repository.get_by_id_and_shop(
-        customer_id=data.customerId,
+    party = party_repository.get_by_id_and_shop(
+        party_id=data.partyId,
         shop_id=shop_id,
     )
 
-    if customer is None:
+    if party is None:
         raise SyncConflictException(
-            f"Customer {data.customerId} does not exist"
+            f"Party {data.partyId} does not exist or is deleted"
         )
 
     device = device_repository.get_by_id_and_shop(
@@ -72,30 +71,47 @@ def apply_ledger_entry_create(
             f"Device {device_id} does not exist"
         )
 
-    if data.type == LedgerEntryType.UDHAAR:
-        _validate_udhaar_items(
+    entry_type = LedgerEntryType(data.type)
+
+    if entry_type == LedgerEntryType.UDHAAR:
+        if party.type != PartyType.CUSTOMER:
+            raise SyncConflictException(
+                "UDHAAR is only allowed for customers"
+            )
+
+    elif entry_type == LedgerEntryType.SUPPLY:
+        if party.type != PartyType.SUPPLIER:
+            raise SyncConflictException(
+                "SUPPLY is only allowed for suppliers"
+            )
+
+    elif entry_type == LedgerEntryType.PAYMENT:
+        if items:
+            raise SyncConflictException(
+                "Payment ledger entries cannot contain item"
+            )
+
+    else:
+        raise SyncConflictException(
+            f"Unsupported ledger entry type: {entry_type}"
+        )
+
+    if entry_type in (
+        LedgerEntryType.UDHAAR,
+        LedgerEntryType.SUPPLY,
+    ):
+        _validate_entry_items(
             shop_id=shop_id,
             ledger_entry_id=data.id,
             items=items,
             item_repository=item_repository,
         )
 
-    elif data.type == LedgerEntryType.PAYMENT:
-        if items:
-            raise SyncConflictException(
-                "Payment ledger entries cannot contain items"
-            )
-
-    else:
-        raise SyncConflictException(
-            f"Unsupported ledger entry type: {data.type}"
-        )
-
     entry = ledger_repository.create(
         entry_id=data.id,
-        customer_id=data.customerId,
+        party_id=data.partyId,
         device_id=device_id,
-        entry_type=LedgerEntryType(data.type),
+        entry_type=entry_type,
         amount=data.amount,
         note=data.note,
         occurred_at=data.occurredAt,
@@ -111,11 +127,11 @@ def apply_ledger_entry_create(
         )
 
 
-def _validate_udhaar_items(
+def _validate_entry_items(
     *,
     shop_id: UUID,
     ledger_entry_id: UUID,
-    items,
+    items: list,
     item_repository: ItemRepository,
 ) -> None:
     for item in items:
@@ -127,6 +143,11 @@ def _validate_udhaar_items(
         if not item.itemName.strip():
             raise SyncConflictException(
                 "Entry item name is required"
+            )
+
+        if item.amount <= 0:
+            raise SyncConflictException(
+                "Entry item amount must be greater than zero"
             )
 
         if item.itemId is None:

@@ -1,3 +1,4 @@
+
 from uuid import UUID
 
 from sqlalchemy.exc import IntegrityError
@@ -7,9 +8,9 @@ from app.core.exceptions import (
     ConflictException,
     NotFoundException,
 )
-from app.models.enums import LedgerEntryType
+from app.models.enums import LedgerEntryType, PartyType
 from app.models.ledger_entry import LedgerEntry
-from app.repositories.customer import CustomerRepository
+from app.repositories.party_repository import PartyRepository
 from app.repositories.device import DeviceRepository
 from app.repositories.ledger_entry import LedgerEntryRepository
 from app.schemas.ledger_entry import PaymentCreate
@@ -20,12 +21,12 @@ class RecordPaymentService:
         self,
         db: Session,
         ledger_repository: LedgerEntryRepository,
-        customer_repository: CustomerRepository,
+        party_repository: PartyRepository,
         device_repository: DeviceRepository,
     ) -> None:
         self.db = db
         self.ledger_repository = ledger_repository
-        self.customer_repository = customer_repository
+        self.party_repository = party_repository
         self.device_repository = device_repository
 
     def execute(
@@ -34,13 +35,21 @@ class RecordPaymentService:
         shop_id: UUID,
         data: PaymentCreate,
     ) -> LedgerEntry:
-        customer = self.customer_repository.get_by_id_and_shop(
-            customer_id=data.customer_id,
+        party = self.party_repository.get_by_id_and_shop(
+            party_id=data.party_id,
             shop_id=shop_id,
         )
 
-        if customer is None:
-            raise NotFoundException("Customer not found")
+        if party is None:
+            raise NotFoundException("Party not found")
+
+        if party.type not in (
+            PartyType.CUSTOMER,
+            PartyType.SUPPLIER,
+        ):
+            raise ConflictException(
+                "Payments can only be recorded for customers or suppliers"
+            )
 
         device = self.device_repository.get_by_id_and_shop(
             device_id=data.device_id,
@@ -53,7 +62,7 @@ class RecordPaymentService:
         try:
             entry = self.ledger_repository.create(
                 entry_id=data.id,
-                customer_id=data.customer_id,
+                party_id=data.party_id,
                 device_id=data.device_id,
                 entry_type=LedgerEntryType.PAYMENT,
                 amount=data.amount,
@@ -63,7 +72,16 @@ class RecordPaymentService:
 
             self.db.commit()
 
-            return self.ledger_repository.get_by_id(entry.id)
+            saved_entry = self.ledger_repository.get_by_id(
+                entry.id,
+            )
+
+            if saved_entry is None:
+                raise RuntimeError(
+                    "Payment could not be loaded after creation"
+                )
+
+            return saved_entry
 
         except IntegrityError as exc:
             self.db.rollback()

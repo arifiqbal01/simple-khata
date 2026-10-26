@@ -1,23 +1,34 @@
 
+import * as Crypto from 'expo-crypto';
+
 import { runWriteTransaction } from '@/db/write-transaction';
-import { CustomerRepository } from '@/repositories/customer';
+
+import { PartyRepository } from '@/repositories/party/party';
+
 import {
   LedgerRepository,
   type CreateUdhaarItemValues,
-} from '@/repositories/ledger';
-import { SyncOutboxRepository } from '@/repositories/sync-outbox';
+  type PartyLedgerEntry,
+} from '@/repositories/ledger/ledger';
+
+import { SyncOutboxRepository } from '@/repositories/sync/sync-outbox';
+
 import { requestSync } from '@/services/sync/sync-coordinator';
-import type { LedgerEntry } from '@/types/domain';
-import * as Crypto from 'expo-crypto';
 
 export interface CreateUdhaarItemInput {
   itemId?: string | null;
   name: string;
+
+  // Optional for backward compatibility.
+  amount?: number | null;
+  quantity?: number | null;
+  unit?: string | null;
+  unitPrice?: number | null;
 }
 
 export interface CreateUdhaarInput {
   shopId: string;
-  customerId: string;
+  partyId: string;
   deviceId: string;
   amount: number;
   note?: string | null;
@@ -25,57 +36,223 @@ export interface CreateUdhaarInput {
   items?: CreateUdhaarItemInput[];
 }
 
+function validateAmount(amount: number): void {
+  if (
+    !Number.isSafeInteger(amount) ||
+    amount <= 0
+  ) {
+    throw new Error(
+      'Udhaar amount must be a positive whole number'
+    );
+  }
+}
+
+function normalizeUdhaarItem(
+  item: CreateUdhaarItemInput
+): CreateUdhaarItemValues {
+  const name = item.name.trim();
+
+  if (!name) {
+    throw new Error('Item name is required');
+  }
+
+  if (name.length > 150) {
+    throw new Error(
+      'Item name cannot exceed 150 characters'
+    );
+  }
+
+  const itemId = item.itemId?.trim() || null;
+
+  const quantity = item.quantity ?? null;
+  const unit = item.unit?.trim() || null;
+  const unitPrice = item.unitPrice ?? null;
+  const suppliedAmount = item.amount ?? null;
+
+  const hasDetails =
+    quantity !== null ||
+    unit !== null ||
+    unitPrice !== null ||
+    suppliedAmount !== null;
+
+  // Existing name-only items remain supported.
+  if (!hasDetails) {
+    return {
+      id: Crypto.randomUUID(),
+      itemId,
+      name,
+      amount: null,
+      quantity: null,
+      unit: null,
+      unitPrice: null,
+    };
+  }
+
+  if (
+    quantity === null ||
+    !Number.isSafeInteger(quantity) ||
+    quantity <= 0
+  ) {
+    throw new Error(
+      `Enter a valid whole-number quantity for ${name}`
+    );
+  }
+
+  if (!unit) {
+    throw new Error(
+      `Select a unit for ${name}`
+    );
+  }
+
+  if (unit.length > 30) {
+    throw new Error(
+      `Unit for ${name} cannot exceed 30 characters`
+    );
+  }
+
+  if (
+    unitPrice === null ||
+    !Number.isSafeInteger(unitPrice) ||
+    unitPrice < 0
+  ) {
+    throw new Error(
+      `Enter a valid selling price for ${name}`
+    );
+  }
+
+  const calculatedAmount = quantity * unitPrice;
+
+  if (!Number.isSafeInteger(calculatedAmount)) {
+    throw new Error(
+      `Line total for ${name} exceeds the supported amount`
+    );
+  }
+
+  if (
+    suppliedAmount !== null &&
+    suppliedAmount !== calculatedAmount
+  ) {
+    throw new Error(
+      `Line total does not match quantity and price for ${name}`
+    );
+  }
+
+  return {
+    id: Crypto.randomUUID(),
+    itemId,
+    name,
+    amount: calculatedAmount,
+    quantity,
+    unit,
+    unitPrice,
+  };
+}
+
 export class CreateUdhaarService {
   constructor(
     private readonly ledgerRepository: LedgerRepository,
-    private readonly customerRepository: CustomerRepository,
+    private readonly partyRepository: PartyRepository,
     private readonly syncOutboxRepository: SyncOutboxRepository
   ) {}
 
   async execute(
     input: CreateUdhaarInput
-  ): Promise<LedgerEntry> {
+  ): Promise<PartyLedgerEntry> {
+    const shopId = input.shopId.trim();
+    const partyId = input.partyId.trim();
+    const deviceId = input.deviceId.trim();
+
+    if (!shopId) {
+      throw new Error('Shop ID is required');
+    }
+
+    if (!partyId) {
+      throw new Error('Customer ID is required');
+    }
+
+    if (!deviceId) {
+      throw new Error('Device ID is required');
+    }
+
     validateAmount(input.amount);
 
+    /*
+     * Customers and suppliers share the parties table.
+     * Udhaar entries must belong to a CUSTOMER.
+     */
     const customer =
-      await this.customerRepository.getByIdAndShop(
-        input.customerId,
-        input.shopId
+      await this.partyRepository.getByIdAndShop(
+        partyId,
+        shopId
       );
 
-    if (!customer) {
+    if (
+      !customer ||
+      customer.type !== 'CUSTOMER'
+    ) {
       throw new Error('Customer not found');
     }
 
-    const normalizedItems: CreateUdhaarItemValues[] = (
-      input.items ?? []
-    ).map((item) => {
-      const name = item.name.trim();
+    /*
+     * Normalize items before starting the transaction.
+     *
+     * Supports:
+     * - Amount-only Udhaar
+     * - Legacy name-only items
+     * - Fully itemized Udhaar
+     */
+    const normalizedItems =
+      (input.items ?? []).map(normalizeUdhaarItem);
 
-      if (!name) {
-        throw new Error('Item name is required');
-      }
+    /*
+     * For a fully itemized transaction, ensure the
+     * ledger total matches the sum of the item totals.
+     *
+     * Legacy name-only entries are excluded from this
+     * check to preserve existing behavior.
+     */
+    const allItemsItemized =
+      normalizedItems.length > 0 &&
+      normalizedItems.every(
+        (item) => item.amount !== null
+      );
 
-      if (name.length > 150) {
+    if (allItemsItemized) {
+      const itemTotal = normalizedItems.reduce(
+        (sum, item) => sum + (item.amount ?? 0),
+        0
+      );
+
+      if (!Number.isSafeInteger(itemTotal)) {
         throw new Error(
-          'Item name cannot be longer than 150 characters'
+          'Total Udhaar amount exceeds the supported amount'
         );
       }
 
-      return {
-        id: Crypto.randomUUID(),
-        itemId: item.itemId ?? null,
-        name,
-      };
-    });
+      if (itemTotal !== input.amount) {
+        throw new Error(
+          'Udhaar amount must match the total of selected items'
+        );
+      }
+    }
 
     const now = new Date().toISOString();
     const occurredAt = input.occurredAt ?? now;
 
-    const entry: LedgerEntry = {
+    if (
+      !occurredAt.trim() ||
+      Number.isNaN(Date.parse(occurredAt))
+    ) {
+      throw new Error('Invalid occurrence date');
+    }
+
+    /*
+     * Construct the ledger entry.
+     */
+    const entry: PartyLedgerEntry = {
       id: Crypto.randomUUID(),
-      customer_id: input.customerId,
-      device_id: input.deviceId,
+      party_id: partyId,
+      device_id: deviceId,
       type: 'UDHAAR',
       amount: input.amount,
       note: input.note ?? null,
@@ -86,25 +263,25 @@ export class CreateUdhaarService {
     };
 
     /*
-     * Local SQLite and sync API intentionally use
-     * different representations for ledger-entry items.
+     * Preserve item snapshots in the sync payload.
      */
     const syncItems = normalizedItems.map((item) => ({
       id: item.id,
       ledgerEntryId: entry.id,
       itemId: item.itemId,
       itemName: item.name,
+      amount: item.amount ?? null,
+      quantity: item.quantity ?? null,
+      unit: item.unit ?? null,
+      unitPrice: item.unitPrice ?? null,
       createdAt: now,
     }));
 
     const operationId = Crypto.randomUUID();
 
     /*
-     * Domain mutation + outbox enqueue are one atomic
-     * local transaction.
-     *
-     * The shared coordinator prevents overlap with
-     * other transactions using runWriteTransaction().
+     * Ledger entry, item rows, and sync outbox entry
+     * are written atomically.
      */
     await runWriteTransaction(async (db) => {
       await this.ledgerRepository
@@ -113,7 +290,7 @@ export class CreateUdhaarService {
           {
             entry: {
               id: entry.id,
-              customerId: entry.customer_id,
+              partyId: entry.party_id,
               deviceId: entry.device_id,
               type: entry.type,
               amount: entry.amount,
@@ -128,8 +305,8 @@ export class CreateUdhaarService {
       await this.syncOutboxRepository
         .enqueueWithDatabase(db, {
           id: operationId,
-          shopId: input.shopId,
-          deviceId: input.deviceId,
+          shopId,
+          deviceId,
 
           operationType: 'LEDGER_ENTRY_CREATE',
           entityType: 'LEDGER_ENTRY',
@@ -138,7 +315,7 @@ export class CreateUdhaarService {
           payload: {
             entry: {
               id: entry.id,
-              customerId: entry.customer_id,
+              partyId: entry.party_id,
               deviceId: entry.device_id,
               type: entry.type,
               amount: entry.amount,
@@ -154,13 +331,10 @@ export class CreateUdhaarService {
     });
 
     /*
-     * Transaction is committed at this point.
-     *
-     * Do not await sync. The local udhaar operation has
-     * already succeeded and must remain successful even
-     * when the device is offline.
+     * Synchronization runs after the local transaction
+     * commits. A sync failure must not undo the save.
      */
-    void requestSync().catch((error) => {
+    void requestSync().catch((error: unknown) => {
       console.warn(
         '[sync-trigger] udhaar-create failed',
         error
@@ -168,19 +342,5 @@ export class CreateUdhaarService {
     });
 
     return entry;
-  }
-}
-
-function validateAmount(amount: number): void {
-  if (!Number.isSafeInteger(amount)) {
-    throw new Error(
-      'Udhaar amount must be a whole number'
-    );
-  }
-
-  if (amount <= 0) {
-    throw new Error(
-      'Udhaar amount must be greater than zero'
-    );
   }
 }

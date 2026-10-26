@@ -2,9 +2,9 @@
 import { View } from 'react-native';
 
 import {
-  AppText,
-  SyncStatusBadge,
+  AppText
 } from '@/components/ui';
+import { SyncStatusBadge } from '@/components/sync/SyncStatusBadge';
 
 interface HomeHeaderProps {
   shopName: string;

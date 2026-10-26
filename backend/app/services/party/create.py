@@ -1,20 +1,21 @@
+
 from uuid import UUID
 
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.core.exceptions import ConflictException
-from app.models.party import Customer
-from app.repositories.party_repository import CustomerRepository
-from app.schemas.party import CustomerCreate
-from app.services.customer.utils import normalize_phone
+from app.models.party import Party
+from app.repositories.party_repository import PartyRepository
+from app.schemas.party import PartyCreate
+from app.services.party.utils import normalize_phone
 
 
-class CreateCustomerService:
+class CreatePartyService:
     def __init__(
         self,
         db: Session,
-        repository: CustomerRepository,
+        repository: PartyRepository,
     ) -> None:
         self.db = db
         self.repository = repository
@@ -23,8 +24,8 @@ class CreateCustomerService:
         self,
         *,
         shop_id: UUID,
-        data: CustomerCreate,
-    ) -> Customer:
+        data: PartyCreate,
+    ) -> Party:
         phone = normalize_phone(data.phone)
 
         if phone is not None:
@@ -35,25 +36,26 @@ class CreateCustomerService:
 
             if existing is not None:
                 raise ConflictException(
-                    "A customer with this phone number already exists"
+                    "A party with this phone number already exists"
                 )
 
         try:
-            customer = self.repository.create(
-                customer_id=data.id,
+            party = self.repository.create(
+                party_id=data.id,
                 shop_id=shop_id,
+                party_type=data.type,
                 name=data.name.strip(),
                 phone=phone,
             )
 
             self.db.commit()
-            self.db.refresh(customer)
+            self.db.refresh(party)
 
-            return customer
+            return party
 
         except IntegrityError as exc:
             self.db.rollback()
             raise ConflictException(
-                "Customer could not be created because it conflicts "
+                "Party could not be created because it conflicts "
                 "with an existing record"
             ) from exc

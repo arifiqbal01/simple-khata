@@ -1,4 +1,5 @@
-import { ItemRepository } from '@/repositories/item';
+
+import { ItemRepository } from '@/repositories/item/item';
 import type { Item } from '@/types/domain';
 
 export interface SearchItemsInput {
@@ -16,21 +17,30 @@ export class SearchItemsService {
   async execute(
     input: SearchItemsInput
   ): Promise<Item[]> {
-    if (!input.shopId) {
-      throw new Error('Shop ID is required');
-    }
-
+    const shopId = input.shopId.trim();
     const query = input.query?.trim() ?? '';
+
     const limit = input.limit ?? 50;
     const offset = input.offset ?? 0;
 
-    if (!Number.isInteger(limit) || limit < 1 || limit > 100) {
+    if (!shopId) {
+      throw new Error('Shop ID is required');
+    }
+
+    if (
+      !Number.isInteger(limit) ||
+      limit < 1 ||
+      limit > 100
+    ) {
       throw new Error(
         'Limit must be between 1 and 100'
       );
     }
 
-    if (!Number.isInteger(offset) || offset < 0) {
+    if (
+      !Number.isInteger(offset) ||
+      offset < 0
+    ) {
       throw new Error(
         'Offset cannot be negative'
       );
@@ -38,14 +48,14 @@ export class SearchItemsService {
 
     if (!query) {
       return this.itemRepository.listByShop(
-        input.shopId,
+        shopId,
         limit,
         offset
       );
     }
 
     return this.itemRepository.search(
-      input.shopId,
+      shopId,
       query,
       limit,
       offset

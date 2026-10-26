@@ -1,4 +1,4 @@
-# app/services/customer/utils/phone.py
+# app/services/party/utils/phone.py
 
 def normalize_phone(phone: str | None) -> str | None:
     if phone is None:

@@ -1,13 +1,15 @@
+
 from uuid import UUID
 
-from app.models.party import Customer
-from app.repositories.party_repository import CustomerRepository
+from app.models.enums import PartyType
+from app.models.party import Party
+from app.repositories.party_repository import PartyRepository
 
 
-class SearchCustomersService:
+class SearchPartiesService:
     def __init__(
         self,
-        repository: CustomerRepository,
+        repository: PartyRepository,
     ) -> None:
         self.repository = repository
 
@@ -16,12 +18,14 @@ class SearchCustomersService:
         *,
         shop_id: UUID,
         query: str | None = None,
+        party_type: PartyType | None = None,
         limit: int = 50,
         offset: int = 0,
-    ) -> list[Customer]:
+    ) -> list[Party]:
         if query is None or not query.strip():
             return self.repository.list_by_shop(
                 shop_id=shop_id,
+                party_type=party_type,
                 limit=limit,
                 offset=offset,
             )
@@ -29,5 +33,7 @@ class SearchCustomersService:
         return self.repository.search(
             shop_id=shop_id,
             query=query.strip(),
+            party_type=party_type,
             limit=limit,
+            offset=offset,
         )

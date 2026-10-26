@@ -1,6 +1,7 @@
-// src/sync/sync.ts
 
-import { syncOutboxRepository } from '@/repositories/sync-outbox';
+import {
+  syncOutboxRepository,
+} from '@/repositories/sync/sync-outbox';
 
 import {
   pullRemoteChanges,
@@ -25,18 +26,40 @@ export interface SyncNowResult {
 /**
  * Run one complete synchronization cycle.
  *
- * This function does NOT manage concurrency.
- * Call it through SyncCoordinator for normal app usage.
+ * Stages:
+ * 1. Repair legacy outbox payloads.
+ * 2. Push local operations.
+ * 3. Pull remote changes.
+ *
+ * This function does not manage concurrency.
+ * Normal app usage must go through SyncCoordinator.
  */
 export async function syncNow(
   input: SyncNowInput
 ): Promise<SyncNowResult> {
+  const shopId = input.shopId.trim();
+  const deviceId = input.deviceId.trim();
+
+  if (!shopId) {
+    throw new Error('Shop ID is required');
+  }
+
+  if (!deviceId) {
+    throw new Error('Device ID is required');
+  }
+
   console.log('[sync] starting', {
-    shopId: input.shopId,
-    deviceId: input.deviceId,
+    shopId,
+    deviceId,
   });
 
-  // Stage 1: Repair legacy payloads
+  /*
+   * Stage 1: Repair legacy outbox payloads.
+   *
+   * Important for existing installations
+   * migrating from customer-based sync
+   * to party-based sync.
+   */
   console.log('[sync] repair starting');
 
   let repaired: number;
@@ -53,7 +76,13 @@ export async function syncNow(
     throw error;
   }
 
-  // Stage 2: Push local operations
+  /*
+   * Stage 2: Push local changes.
+   *
+   * Push first so that the backend receives
+   * locally created parties, items, and
+   * ledger entries before the next pull.
+   */
   console.log('[sync] push starting');
 
   let push: PushPendingResult;
@@ -67,15 +96,20 @@ export async function syncNow(
     throw error;
   }
 
-  // Stage 3: Pull remote changes
+  /*
+   * Stage 3: Pull remote changes.
+   *
+   * Each pull batch must commit its SQLite
+   * changes and cursor atomically.
+   */
   console.log('[sync] pull starting');
 
   let pull: PullRemoteChangesResult;
 
   try {
     pull = await pullRemoteChanges({
-      shopId: input.shopId,
-      deviceId: input.deviceId,
+      shopId,
+      deviceId,
     });
 
     console.log('[sync] pull completed', pull);
@@ -84,7 +118,12 @@ export async function syncNow(
     throw error;
   }
 
-  console.log('[sync] completed successfully');
+  console.log('[sync] completed successfully', {
+    pushed: push.pushed,
+    remaining: push.remaining,
+    pulled: pull.pulled,
+    cursor: pull.cursor,
+  });
 
   return {
     push,

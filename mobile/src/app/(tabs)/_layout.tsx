@@ -1,21 +1,29 @@
 
 import { Redirect, Tabs } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
-import { useEffect, useState } from 'react';
+
+import {
+  useEffect,
+  useState,
+} from 'react';
+
 import {
   ActivityIndicator,
   View,
 } from 'react-native';
 
 import { BottomNavigation } from '@/components/layout';
-import { DeviceRepository } from '@/repositories/device';
-import { LocalIdentityRepository } from '@/repositories/local-identity';
-import { ShopRepository } from '@/repositories/shop';
+
+import { DeviceRepository } from '@/repositories/bootstrap/device';
+import { LocalIdentityRepository } from '@/repositories/bootstrap/local-identity';
+import { ShopRepository } from '@/repositories/bootstrap/shop';
+
 import { InitializeAppService } from '@/services/bootstrap/initialize';
 
 export default function TabsLayout() {
   const [ready, setReady] = useState(false);
-  const [hasIdentity, setHasIdentity] = useState(false);
+  const [hasIdentity, setHasIdentity] =
+    useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -35,13 +43,16 @@ export default function TabsLayout() {
         }
 
         setHasIdentity(identity !== null);
-        setReady(true);
       } catch (error) {
         console.error(
-          'Failed to initialize app:',
+          '[tabs] Failed to initialize app:',
           error
         );
 
+        if (!cancelled) {
+          setHasIdentity(false);
+        }
+      } finally {
         if (!cancelled) {
           setReady(true);
         }
@@ -64,7 +75,10 @@ export default function TabsLayout() {
           translucent={false}
         />
 
-        <ActivityIndicator size="large" />
+        <ActivityIndicator
+          size="large"
+          color="#242422"
+        />
       </View>
     );
   }
@@ -97,16 +111,25 @@ export default function TabsLayout() {
         />
 
         <Tabs.Screen
-          name="customers"
+          name="customer"
           options={{
             title: 'Customers',
+            popToTopOnBlur: true,
           }}
         />
 
         <Tabs.Screen
-          name="customer"
+          name="suppliers"
           options={{
-            href: null,
+            title: 'Suppliers',
+            popToTopOnBlur: true,
+          }}
+        />
+
+        <Tabs.Screen
+          name="items"
+          options={{
+            title: 'Items',
             popToTopOnBlur: true,
           }}
         />

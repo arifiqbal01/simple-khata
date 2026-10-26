@@ -1,3 +1,4 @@
+
 import { Stack } from 'expo-router';
 
 import { AppHeader } from '@/components/layout';
@@ -12,6 +13,15 @@ export default function CustomerLayout() {
         },
       }}
     >
+      {/* Customer list */}
+      <Stack.Screen
+        name="index"
+        options={{
+          headerShown: false,
+        }}
+      />
+
+      {/* Create customer */}
       <Stack.Screen
         name="new"
         options={{
@@ -25,6 +35,7 @@ export default function CustomerLayout() {
         }}
       />
 
+      {/* Customer ledger */}
       <Stack.Screen
         name="[id]/index"
         options={{
@@ -32,14 +43,16 @@ export default function CustomerLayout() {
         }}
       />
 
+      {/* Add Udhaar */}
       <Stack.Screen
-          name="[id]/udhaar"
-          options={{
-            headerShown: false,
-            gestureEnabled: false,
-          }}
-        />
+        name="[id]/udhaar"
+        options={{
+          headerShown: false,
+          gestureEnabled: false,
+        }}
+      />
 
+      {/* Receive payment */}
       <Stack.Screen
         name="[id]/payment"
         options={{

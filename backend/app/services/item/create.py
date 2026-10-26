@@ -1,3 +1,4 @@
+
 from uuid import UUID
 
 from sqlalchemy.exc import IntegrityError
@@ -29,9 +30,12 @@ class CreateItemService:
                 item_id=data.id,
                 shop_id=shop_id,
                 name=data.name,
+                default_unit=data.default_unit,
+                default_selling_price=data.default_selling_price,
             )
 
             self.db.commit()
+            self.db.refresh(item)
 
             return item
 

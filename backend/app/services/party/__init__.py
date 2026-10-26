@@ -1,11 +1,14 @@
-from app.services.customer.create import CreateCustomerService
-from app.services.customer.get import GetCustomerService
-from app.services.customer.search import SearchCustomersService
-from app.services.customer.update import UpdateCustomerService
+
+from app.services.party.create import CreatePartyService
+from app.services.party.get import GetPartyService
+from app.services.party.search import SearchPartiesService
+from app.services.party.update import UpdatePartyService
+from app.services.party.delete import DeletePartyService
 
 __all__ = [
-    "CreateCustomerService",
-    "GetCustomerService",
-    "SearchCustomersService",
-    "UpdateCustomerService",
+    "CreatePartyService",
+    "GetPartyService",
+    "SearchPartiesService",
+    "UpdatePartyService",
+    "DeletePartyService",
 ]

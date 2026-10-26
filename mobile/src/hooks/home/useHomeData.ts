@@ -6,6 +6,7 @@ import {
   useState,
   useSyncExternalStore,
 } from 'react';
+
 import { useFocusEffect } from 'expo-router';
 
 import {
@@ -13,19 +14,28 @@ import {
   subscribeToSyncState,
 } from '@/services/sync/sync-coordinator';
 
-import {
-  CustomerRepository,
-  type CustomerWithBalance,
-} from '@/repositories/customer';
+import { PartyRepository } from '@/repositories/party/party';
 
-import { LedgerRepository } from '@/repositories/ledger';
-import { DeviceRepository } from '@/repositories/device';
-import { LocalIdentityRepository } from '@/repositories/local-identity';
-import { ShopRepository } from '@/repositories/shop';
+import { DeviceRepository } from '@/repositories/bootstrap/device';
+import { LocalIdentityRepository } from '@/repositories/bootstrap/local-identity';
+import { ShopRepository } from '@/repositories/bootstrap/shop';
+
 import { InitializeAppService } from '@/services/bootstrap/initialize';
 
-const customerRepository = new CustomerRepository();
-const ledgerRepository = new LedgerRepository();
+export type HomePartyType = 'CUSTOMER' | 'SUPPLIER';
+
+type PartyBalanceSummary = Awaited<
+  ReturnType<PartyRepository['getBalanceSummary']>
+>;
+
+type BalanceParty =
+  PartyBalanceSummary['parties'][number];
+
+export type HomeParty = BalanceParty & {
+  type: HomePartyType;
+};
+
+const partyRepository = new PartyRepository();
 
 const initializeAppService = new InitializeAppService(
   new ShopRepository(),
@@ -33,35 +43,64 @@ const initializeAppService = new InitializeAppService(
   new LocalIdentityRepository()
 );
 
+function calculateShopBalances(
+  customers: BalanceParty[],
+  suppliers: BalanceParty[]
+) {
+  let toReceive = 0;
+  let toPay = 0;
+
+  for (const party of customers) {
+    const balance = party.balance;
+
+    if (balance > 0) {
+      toReceive += balance;
+    } else if (balance < 0) {
+      toPay += Math.abs(balance);
+    }
+  }
+
+  for (const party of suppliers) {
+    const balance = party.balance;
+
+    if (balance > 0) {
+      toPay += balance;
+    } else if (balance < 0) {
+      toReceive += Math.abs(balance);
+    }
+  }
+
+  return {
+    toReceive,
+    toPay,
+    netBalance: toReceive - toPay,
+  };
+}
+
 export function useHomeData() {
-  const [shopId, setShopId] = useState<string | null>(
-    null
-  );
+  const [shopId, setShopId] =
+    useState<string | null>(null);
 
   const [shopName, setShopName] = useState('');
   const [deviceName, setDeviceName] = useState('');
 
-  const [customers, setCustomers] = useState<
-    CustomerWithBalance[]
-  >([]);
+  const [parties, setParties] =
+    useState<HomeParty[]>([]);
 
-  const [totalOutstanding, setTotalOutstanding] =
-    useState(0);
-
-  const [totalMoneyOut, setTotalMoneyOut] =
-    useState(0);
-
-  const [totalMoneyIn, setTotalMoneyIn] =
-    useState(0);
+  const [toReceive, setToReceive] = useState(0);
+  const [toPay, setToPay] = useState(0);
+  const [netBalance, setNetBalance] = useState(0);
 
   const [query, setQuery] = useState('');
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [error, setError] = useState<string | null>(null);
 
-  const requestId = useRef(0);
+  const [error, setError] =
+    useState<string | null>(null);
+
+  const requestIdRef = useRef(0);
   const queryRef = useRef('');
-  const mountedRef = useRef(true);
+  const mountedRef = useRef(false);
   const refreshingRef = useRef(false);
 
   const syncState = useSyncExternalStore(
@@ -70,14 +109,13 @@ export function useHomeData() {
     getSyncState
   );
 
-  // Load customers and shop-wide financial totals.
   const loadHome = useCallback(
     async (
       currentShopId: string,
       searchQuery = '',
       showRefreshing = false
-    ) => {
-      const currentRequest = ++requestId.current;
+    ): Promise<void> => {
+      const currentRequest = ++requestIdRef.current;
 
       if (showRefreshing) {
         refreshingRef.current = true;
@@ -87,53 +125,99 @@ export function useHomeData() {
       try {
         setError(null);
 
-        const [result, shopSummary] = await Promise.all([
-          customerRepository.getBalanceSummary(
-            currentShopId,
-            searchQuery
-          ),
+        const search = searchQuery.trim();
 
-          searchQuery.trim()
-            ? Promise.resolve(null)
-            : ledgerRepository.getShopLedgerSummary(
-                currentShopId
-              ),
+        /*
+         * Shop totals always use ALL active parties.
+         * Search only filters the displayed party list.
+         */
+        const [
+          allCustomers,
+          allSuppliers,
+        ] = await Promise.all([
+          partyRepository.getBalanceSummary(
+            currentShopId,
+            'CUSTOMER'
+          ),
+          partyRepository.getBalanceSummary(
+            currentShopId,
+            'SUPPLIER'
+          ),
         ]);
 
         if (
           !mountedRef.current ||
-          currentRequest !== requestId.current
+          currentRequest !== requestIdRef.current
         ) {
           return;
         }
 
-        setCustomers(result.customers);
+        const balances = calculateShopBalances(
+          allCustomers.parties,
+          allSuppliers.parties
+        );
 
-        // Financial totals are shop-wide.
-        // Do not change them during customer search.
-        if (!searchQuery.trim() && shopSummary) {
-          setTotalOutstanding(
-            result.totalOutstanding
-          );
+        setToReceive(balances.toReceive);
+        setToPay(balances.toPay);
+        setNetBalance(balances.netBalance);
 
-          setTotalMoneyOut(
-            shopSummary.totalMoneyOut
-          );
+        let customerParties = allCustomers.parties;
+        let supplierParties = allSuppliers.parties;
 
-          setTotalMoneyIn(
-            shopSummary.totalMoneyIn
-          );
+        if (search) {
+          const [
+            filteredCustomers,
+            filteredSuppliers,
+          ] = await Promise.all([
+            partyRepository.getBalanceSummary(
+              currentShopId,
+              'CUSTOMER',
+              search
+            ),
+            partyRepository.getBalanceSummary(
+              currentShopId,
+              'SUPPLIER',
+              search
+            ),
+          ]);
+
+          if (
+            !mountedRef.current ||
+            currentRequest !== requestIdRef.current
+          ) {
+            return;
+          }
+
+          customerParties = filteredCustomers.parties;
+          supplierParties = filteredSuppliers.parties;
         }
+
+        const combinedParties: HomeParty[] = [
+          ...customerParties.map((party) => ({
+            ...party,
+            type: 'CUSTOMER' as const,
+          })),
+          ...supplierParties.map((party) => ({
+            ...party,
+            type: 'SUPPLIER' as const,
+          })),
+        ];
+
+        combinedParties.sort((a, b) =>
+          a.name.localeCompare(b.name)
+        );
+
+        setParties(combinedParties);
       } catch (loadError) {
         if (
           !mountedRef.current ||
-          currentRequest !== requestId.current
+          currentRequest !== requestIdRef.current
         ) {
           return;
         }
 
         console.error(
-          'Failed to load home:',
+          '[home] Failed to load data:',
           loadError
         );
 
@@ -143,19 +227,18 @@ export function useHomeData() {
             : 'Could not load khata'
         );
       } finally {
-        if (showRefreshing) {
+        if (
+          currentRequest === requestIdRef.current &&
+          mountedRef.current
+        ) {
           refreshingRef.current = false;
-
-          if (mountedRef.current) {
-            setRefreshing(false);
-          }
+          setRefreshing(false);
         }
       }
     },
     []
   );
 
-  // Initialize the current shop and device.
   useEffect(() => {
     mountedRef.current = true;
     let cancelled = false;
@@ -168,9 +251,7 @@ export function useHomeData() {
         const identity =
           await initializeAppService.execute();
 
-        if (cancelled) {
-          return;
-        }
+        if (cancelled) return;
 
         if (!identity) {
           throw new Error(
@@ -189,12 +270,10 @@ export function useHomeData() {
           queryRef.current
         );
       } catch (initializeError) {
-        if (cancelled) {
-          return;
-        }
+        if (cancelled) return;
 
         console.error(
-          'Failed to initialize home:',
+          '[home] Failed to initialize:',
           initializeError
         );
 
@@ -215,16 +294,13 @@ export function useHomeData() {
     return () => {
       cancelled = true;
       mountedRef.current = false;
-      requestId.current += 1;
+      requestIdRef.current += 1;
     };
   }, [loadHome]);
 
-  // Reload when Home receives focus.
   useFocusEffect(
     useCallback(() => {
-      if (!shopId || loading) {
-        return;
-      }
+      if (!shopId || loading) return;
 
       void loadHome(
         shopId,
@@ -233,7 +309,6 @@ export function useHomeData() {
     }, [shopId, loading, loadHome])
   );
 
-  // Reload when synchronized data changes.
   useEffect(() => {
     if (
       !shopId ||
@@ -254,30 +329,24 @@ export function useHomeData() {
     loadHome,
   ]);
 
-  // Update search query and invalidate stale results.
   const handleSearch = useCallback(
     (value: string) => {
       queryRef.current = value;
       setQuery(value);
 
-      requestId.current += 1;
+      requestIdRef.current += 1;
     },
     []
   );
 
-  // Debounce customer search.
   useEffect(() => {
-    if (!shopId || loading) {
-      return;
-    }
+    if (!shopId || loading) return;
 
     const timeout = setTimeout(() => {
       void loadHome(shopId, query);
     }, 180);
 
-    return () => {
-      clearTimeout(timeout);
-    };
+    return () => clearTimeout(timeout);
   }, [
     query,
     shopId,
@@ -285,12 +354,8 @@ export function useHomeData() {
     loadHome,
   ]);
 
-  // Manual pull-to-refresh.
   const refresh = useCallback(async () => {
-    if (
-      !shopId ||
-      refreshingRef.current
-    ) {
+    if (!shopId || refreshingRef.current) {
       return;
     }
 
@@ -304,11 +369,19 @@ export function useHomeData() {
   return {
     shopName,
     deviceName,
-    customers,
+    parties,
 
-    totalOutstanding,
-    totalMoneyOut,
-    totalMoneyIn,
+    // New party-based financial totals
+    toReceive,
+    toPay,
+    netBalance,
+
+    // Compatibility with existing Home callers.
+    // These now represent financial positions,
+    // NOT historical transaction flows.
+    totalOutstanding: netBalance,
+    totalMoneyOut: toReceive,
+    totalMoneyIn: toPay,
 
     query,
     loading,

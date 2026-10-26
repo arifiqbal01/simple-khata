@@ -1,51 +1,107 @@
-import { getDatabase } from '@/db/database';
-import { CustomerRepository } from '@/repositories/customer';
-import { LedgerRepository } from '@/repositories/ledger';
-import { SyncOutboxRepository } from '@/repositories/sync-outbox';
-import { requestSync } from '@/services/sync/sync-coordinator';
-import type { LedgerEntry } from '@/types/domain';
+
 import * as Crypto from 'expo-crypto';
+
+import { runWriteTransaction } from '@/db/write-transaction';
+
+import { PartyRepository } from '@/repositories/party/party';
+
+import {
+  LedgerRepository,
+  type PartyLedgerEntry,
+} from '@/repositories/ledger/ledger';
+
+import { SyncOutboxRepository } from '@/repositories/sync/sync-outbox';
+
+import { requestSync } from '@/services/sync/sync-coordinator';
+
+export type PaymentPartyType = 'CUSTOMER' | 'SUPPLIER';
 
 export interface RecordPaymentInput {
   shopId: string;
-  customerId: string;
+  partyId: string;
   deviceId: string;
   amount: number;
   occurredAt?: string;
+  partyType?: PaymentPartyType;
 }
 
 export class RecordPaymentService {
   constructor(
     private readonly ledgerRepository: LedgerRepository,
-    private readonly customerRepository: CustomerRepository,
+    private readonly partyRepository: PartyRepository,
     private readonly syncOutboxRepository: SyncOutboxRepository
   ) {}
 
   async execute(
     input: RecordPaymentInput
-  ): Promise<LedgerEntry> {
+  ): Promise<PartyLedgerEntry> {
+    const shopId = input.shopId.trim();
+    const partyId = input.partyId.trim();
+    const deviceId = input.deviceId.trim();
+
+    if (!shopId) {
+      throw new Error('Shop ID is required');
+    }
+
+    if (!partyId) {
+      throw new Error('Party ID is required');
+    }
+
+    if (!deviceId) {
+      throw new Error('Device ID is required');
+    }
+
     validateAmount(input.amount);
 
-    const customer =
-      await this.customerRepository.getByIdAndShop(
-        input.customerId,
-        input.shopId
+    /*
+     * Verify that the party belongs to this shop.
+     * Payments are supported for both customers
+     * and suppliers.
+     */
+    const party =
+      await this.partyRepository.getByIdAndShop(
+        partyId,
+        shopId
       );
 
-    if (!customer) {
-      throw new Error('Customer not found');
+    if (!party) {
+      throw new Error('Customer or supplier not found');
+    }
+
+    if (
+      party.type !== 'CUSTOMER' &&
+      party.type !== 'SUPPLIER'
+    ) {
+      throw new Error('Invalid party type');
+    }
+
+    if (
+      input.partyType &&
+      party.type !== input.partyType
+    ) {
+      throw new Error(
+        `Expected ${input.partyType.toLowerCase()} but found ${party.type.toLowerCase()}`
+      );
     }
 
     const now = new Date().toISOString();
+    const occurredAt = input.occurredAt ?? now;
 
-    const entry: LedgerEntry = {
+    if (
+      !occurredAt.trim() ||
+      Number.isNaN(Date.parse(occurredAt))
+    ) {
+      throw new Error('Invalid occurrence date');
+    }
+
+    const entry: PartyLedgerEntry = {
       id: Crypto.randomUUID(),
-      customer_id: input.customerId,
-      device_id: input.deviceId,
+      party_id: partyId,
+      device_id: deviceId,
       type: 'PAYMENT',
       amount: input.amount,
       note: null,
-      occurred_at: input.occurredAt ?? now,
+      occurred_at: occurredAt,
       created_at: now,
       deleted_at: null,
       deleted_by_device_id: null,
@@ -53,18 +109,16 @@ export class RecordPaymentService {
 
     const operationId = Crypto.randomUUID();
 
-    const db = await getDatabase();
-
     /*
-     * Ledger mutation + outbox operation must be committed
-     * atomically before any network sync is attempted.
+     * Commit the payment and sync operation
+     * together in the local database.
      */
-    await db.withTransactionAsync(async () => {
+    await runWriteTransaction(async (db) => {
       await this.ledgerRepository.createWithDatabase(
         db,
         {
           id: entry.id,
-          customerId: entry.customer_id,
+          partyId: entry.party_id,
           deviceId: entry.device_id,
           type: entry.type,
           amount: entry.amount,
@@ -78,39 +132,32 @@ export class RecordPaymentService {
         db,
         {
           id: operationId,
-          shopId: input.shopId,
-          deviceId: input.deviceId,
-
+          shopId,
+          deviceId,
           operationType: 'LEDGER_ENTRY_CREATE',
           entityType: 'LEDGER_ENTRY',
           entityId: entry.id,
-
           payload: {
-              entry: {
-                id: entry.id,
-                customerId: entry.customer_id,
-                deviceId: entry.device_id,
-                type: entry.type,
-                amount: entry.amount,
-                note: entry.note,
-                occurredAt: entry.occurred_at,
-                createdAt: entry.created_at,
-              },
-              items: [],
+            entry: {
+              id: entry.id,
+              partyId: entry.party_id,
+              deviceId: entry.device_id,
+              type: entry.type,
+              amount: entry.amount,
+              note: entry.note,
+              occurredAt: entry.occurred_at,
+              createdAt: entry.created_at,
             },
-
+            items: [],
+          },
           createdAt: now,
         }
       );
     });
 
     /*
-     * Local payment is committed.
-     *
-     * Sync is fire-and-forget so an offline/network failure
-     * never causes the successful local payment to fail.
-     * The outbox remains available for a later reconnect,
-     * foreground, startup, or manual sync.
+     * Local save is complete.
+     * Sync failures must not undo the payment.
      */
     void requestSync().catch((error) => {
       console.warn(

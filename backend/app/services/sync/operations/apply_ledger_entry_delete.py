@@ -1,3 +1,4 @@
+
 from uuid import UUID
 
 from sqlalchemy.orm import Session
@@ -6,7 +7,7 @@ from app.core.exceptions import (
     ConflictException,
     NotFoundException,
 )
-from app.repositories.customer import CustomerRepository
+from app.repositories.party_repository import PartyRepository
 from app.repositories.device import DeviceRepository
 from app.repositories.ledger_entry import LedgerEntryRepository
 from app.schemas.sync import LedgerEntryDeleteOperation
@@ -28,7 +29,7 @@ def apply_ledger_entry_delete(
         raise ConflictException("Deleting device ID mismatch")
 
     device_repository = DeviceRepository(db)
-    customer_repository = CustomerRepository(db)
+    party_repository = PartyRepository(db)
     ledger_repository = LedgerEntryRepository(db)
 
     device = device_repository.get_by_id_and_shop(
@@ -44,12 +45,13 @@ def apply_ledger_entry_delete(
     if entry is None:
         raise NotFoundException("Ledger entry not found")
 
-    customer = customer_repository.get_by_id_and_shop(
-        customer_id=entry.customer_id,
+    party = party_repository.get_by_id_and_shop(
+        party_id=entry.party_id,
         shop_id=shop_id,
+        include_deleted=True,
     )
 
-    if customer is None:
+    if party is None:
         raise NotFoundException("Ledger entry not found")
 
     if entry.deleted_at is not None:

@@ -1,20 +1,24 @@
+
 from uuid import UUID
 
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.core.exceptions import ConflictException, NotFoundException
-from app.models.party import Customer
-from app.repositories.party_repository import CustomerRepository
-from app.schemas.party import CustomerUpdate
-from app.services.customer.utils import normalize_phone
+from app.core.exceptions import (
+    ConflictException,
+    NotFoundException,
+)
+from app.models.party import Party
+from app.repositories.party_repository import PartyRepository
+from app.schemas.party import PartyUpdate
+from app.services.party.utils import normalize_phone
 
 
-class UpdateCustomerService:
+class UpdatePartyService:
     def __init__(
         self,
         db: Session,
-        repository: CustomerRepository,
+        repository: PartyRepository,
     ) -> None:
         self.db = db
         self.repository = repository
@@ -23,25 +27,29 @@ class UpdateCustomerService:
         self,
         *,
         shop_id: UUID,
-        customer_id: UUID,
-        data: CustomerUpdate,
-    ) -> Customer:
-        customer = self.repository.get_by_id_and_shop(
-            customer_id=customer_id,
+        party_id: UUID,
+        data: PartyUpdate,
+    ) -> Party:
+        party = self.repository.get_by_id_and_shop(
+            party_id=party_id,
             shop_id=shop_id,
         )
 
-        if customer is None:
-            raise NotFoundException("Customer not found")
+        if party is None:
+            raise NotFoundException("Party not found")
 
         values = data.model_dump(exclude_unset=True)
 
         if "name" in values:
-            values["name"] = values["name"].strip()
+            name = values["name"]
+
+            if name is None or not name.strip():
+                raise ValueError("Party name cannot be empty")
+
+            values["name"] = name.strip()
 
         if "phone" in values:
             values["phone"] = normalize_phone(values["phone"])
-
             phone = values["phone"]
 
             if phone is not None:
@@ -52,26 +60,27 @@ class UpdateCustomerService:
 
                 if (
                     existing is not None
-                    and existing.id != customer.id
+                    and existing.id != party.id
                 ):
                     raise ConflictException(
-                        "A customer with this phone number already exists"
+                        "A party with this phone number already exists"
                     )
 
         try:
-            customer = self.repository.update(
-                customer,
+            party = self.repository.update(
+                party,
                 values=values,
             )
 
             self.db.commit()
+            self.db.refresh(party)
 
-            return customer
+            return party
 
         except IntegrityError as exc:
             self.db.rollback()
 
             raise ConflictException(
-                "Customer could not be updated because it conflicts "
+                "Party could not be updated because it conflicts "
                 "with an existing record"
             ) from exc
