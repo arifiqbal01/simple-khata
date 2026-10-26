@@ -13,22 +13,16 @@ import sqlalchemy as sa
 
 
 revision: str = "8c743ab77169"
-
-down_revision: Union[str, Sequence[str], None] = (
-    "e51b92735541"
-)
-
+down_revision: Union[str, Sequence[str], None] = "e51b92735541"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    # -----------------------------------------
-    # 1. Add product defaults to item
-    # -----------------------------------------
+    # 1. Add product defaults to items.
 
     op.add_column(
-        "item",
+        "items",
         sa.Column(
             "default_unit",
             sa.String(length=30),
@@ -37,7 +31,7 @@ def upgrade() -> None:
     )
 
     op.add_column(
-        "item",
+        "items",
         sa.Column(
             "default_selling_price",
             sa.BigInteger(),
@@ -47,14 +41,12 @@ def upgrade() -> None:
 
     op.create_check_constraint(
         "ck_items_default_selling_price_nonnegative",
-        "item",
+        "items",
         "default_selling_price IS NULL "
         "OR default_selling_price >= 0",
     )
 
-    # -----------------------------------------
-    # 2. Add quantity and pricing to entry_items
-    # -----------------------------------------
+    # 2. Add quantity and pricing to entry_items.
 
     op.add_column(
         "entry_items",
@@ -95,9 +87,7 @@ def upgrade() -> None:
         "unit_price IS NULL OR unit_price >= 0",
     )
 
-    # -----------------------------------------
-    # 3. Create supplier product catalog
-    # -----------------------------------------
+    # 3. Create supplier product catalog.
 
     op.create_table(
         "supplier_items",
@@ -154,7 +144,7 @@ def upgrade() -> None:
         ),
         sa.ForeignKeyConstraint(
             ["item_id"],
-            ["item.id"],
+            ["items.id"],
         ),
         sa.UniqueConstraint(
             "supplier_id",
@@ -190,9 +180,7 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    # -----------------------------------------
-    # 1. Remove supplier product catalog
-    # -----------------------------------------
+    # 1. Remove supplier product catalog.
 
     op.drop_index(
         "ix_supplier_items_item_id",
@@ -211,9 +199,7 @@ def downgrade() -> None:
 
     op.drop_table("supplier_items")
 
-    # -----------------------------------------
-    # 2. Remove entry_items additions
-    # -----------------------------------------
+    # 2. Remove entry_items additions.
 
     op.drop_constraint(
         "ck_entry_items_unit_price_nonnegative",
@@ -231,15 +217,13 @@ def downgrade() -> None:
     op.drop_column("entry_items", "unit")
     op.drop_column("entry_items", "quantity")
 
-    # -----------------------------------------
-    # 3. Remove item defaults
-    # -----------------------------------------
+    # 3. Remove item defaults.
 
     op.drop_constraint(
         "ck_items_default_selling_price_nonnegative",
-        "item",
+        "items",
         type_="check",
     )
 
-    op.drop_column("item", "default_selling_price")
-    op.drop_column("item", "default_unit")
+    op.drop_column("items", "default_selling_price")
+    op.drop_column("items", "default_unit")
