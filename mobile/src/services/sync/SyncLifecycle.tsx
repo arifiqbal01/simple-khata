@@ -1,11 +1,16 @@
+
 import { useEffect, useRef } from 'react';
+
 import {
   AppState,
   type AppStateStatus,
 } from 'react-native';
+
 import NetInfo from '@react-native-community/netinfo';
 
-import { requestSync } from '@/services/sync/sync-coordinator';
+import {
+  requestSync,
+} from '@/services/sync/sync-coordinator';
 
 type SyncTrigger =
   | 'startup'
@@ -20,10 +25,18 @@ export default function SyncLifecycle() {
   const wasConnected = useRef<boolean | null>(null);
 
   useEffect(() => {
+    let mounted = true;
+
+    /*
+     * Startup sync.
+     *
+     * The coordinator prevents overlapping
+     * sync cycles with other app services.
+     */
     void runSync('startup');
 
     /*
-     * Sync whenever the app returns to the foreground.
+     * Sync when the app returns to foreground.
      */
     const appStateSubscription =
       AppState.addEventListener(
@@ -37,19 +50,17 @@ export default function SyncLifecycle() {
             previousState !== 'active' &&
             nextState === 'active';
 
-          if (becameActive) {
+          if (becameActive && mounted) {
             void runSync('foreground');
           }
         }
       );
 
     /*
-     * Sync when network connectivity changes
-     * from offline -> online.
+     * Sync on offline -> online transitions.
      *
-     * We deliberately do not sync on the initial
-     * NetInfo callback because startup already
-     * requests a sync.
+     * Do not sync on the first NetInfo event,
+     * because startup already triggers sync.
      */
     const netInfoUnsubscribe =
       NetInfo.addEventListener((state) => {
@@ -63,12 +74,18 @@ export default function SyncLifecycle() {
 
         wasConnected.current = isConnected;
 
-        if (reconnected) {
+        if (
+          reconnected &&
+          mounted &&
+          appState.current === 'active'
+        ) {
           void runSync('network-reconnect');
         }
       });
 
     return () => {
+      mounted = false;
+
       appStateSubscription.remove();
       netInfoUnsubscribe();
     };
@@ -77,17 +94,44 @@ export default function SyncLifecycle() {
   return null;
 }
 
+/**
+ * Request synchronization only when
+ * the device has a usable network connection.
+ *
+ * Network status is advisory:
+ * the backend request can still fail.
+ */
 async function runSync(
   trigger: SyncTrigger
 ): Promise<void> {
   try {
-    console.log(`[sync-lifecycle] ${trigger}`);
+    const network = await NetInfo.fetch();
+
+    const isConnected =
+      network.isConnected === true &&
+      network.isInternetReachable !== false;
+
+    if (!isConnected) {
+      console.log(
+        `[sync-lifecycle] ${trigger} skipped: offline`
+      );
+
+      return;
+    }
+
+    console.log(
+      `[sync-lifecycle] ${trigger} starting`
+    );
 
     const result = await requestSync();
 
     console.log(
-      `[sync-lifecycle] ${trigger} complete`,
-      result
+      `[sync-lifecycle] ${trigger} completed`,
+      {
+        pushed: result.push.pushed,
+        remaining: result.push.remaining,
+        pulled: result.pull.pulled,
+      }
     );
   } catch (error) {
     console.warn(

@@ -1,16 +1,26 @@
 
-import { useCallback, useState } from 'react';
+import {
+  useCallback,
+  useRef,
+  useState,
+} from 'react';
 
-import type {
-  LedgerHistoryEntry,
-} from '@/repositories/ledger';
-
-import { LocalIdentityRepository } from '@/repositories/local-identity';
+import { LocalIdentityRepository } from '@/repositories/bootstrap/local-identity';
 
 import { deleteLedgerEntry } from '@/services/ledger/deleteLedgerEntry';
 
 const localIdentityRepository =
   new LocalIdentityRepository();
+
+/**
+ * Ledger deletion only requires the entry ID.
+ *
+ * This allows customer and supplier ledger
+ * entries to use the same deletion hook.
+ */
+export interface DeletableLedgerEntry {
+  id: string;
+}
 
 export interface UseDeleteLedgerEntryInput {
   shopId: string | null;
@@ -19,7 +29,7 @@ export interface UseDeleteLedgerEntryInput {
 
 export interface UseDeleteLedgerEntryResult {
   deleteEntry: (
-    entry: LedgerHistoryEntry
+    entry: DeletableLedgerEntry
   ) => Promise<void>;
 
   isDeleting: boolean;
@@ -33,19 +43,34 @@ export function useDeleteLedgerEntry({
   const [deletingEntryId, setDeletingEntryId] =
     useState<string | null>(null);
 
+  const deletingRef = useRef(false);
+
   const deleteEntry = useCallback(
-    async (entry: LedgerHistoryEntry): Promise<void> => {
-      if (deletingEntryId !== null) {
+    async (
+      entry: DeletableLedgerEntry
+    ): Promise<void> => {
+      // Prevent concurrent deletion requests.
+      if (deletingRef.current) {
         return;
       }
 
       if (!shopId) {
-        throw new Error('Shop is not initialized');
+        throw new Error(
+          'Shop is not initialized'
+        );
       }
 
+      if (!entry.id) {
+        throw new Error(
+          'Ledger entry ID is missing'
+        );
+      }
+
+      deletingRef.current = true;
       setDeletingEntryId(entry.id);
 
       try {
+        // Verify the current device identity.
         const identity =
           await localIdentityRepository.get();
 
@@ -62,43 +87,47 @@ export function useDeleteLedgerEntry({
         }
 
         console.log(
-          '[ledger-delete] deleting entry',
+          '[ledger-delete] Deleting entry:',
           entry.id
         );
 
-        const deleted = await deleteLedgerEntry({
-          shopId,
-          deviceId: identity.deviceId,
-          entryId: entry.id,
-        });
+        // Delete locally and enqueue sync operation
+        // through the existing deletion service.
+        const deleted =
+          await deleteLedgerEntry({
+            shopId,
+            deviceId: identity.deviceId,
+            entryId: entry.id,
+          });
 
         if (deleted) {
           console.log(
-            '[ledger-delete] entry deleted locally',
+            '[ledger-delete] Entry deleted locally:',
             entry.id
           );
         } else {
           console.log(
-            '[ledger-delete] entry already deleted',
+            '[ledger-delete] Entry already deleted:',
             entry.id
           );
         }
 
-        // Reload even if the entry was already deleted,
-        // so history and balance reflect the current DB state.
+        // Refresh ledger and balance even if
+        // the entry was already deleted.
         await onDeleted();
       } catch (error) {
         console.error(
-          '[ledger-delete] failed',
+          '[ledger-delete] Failed:',
           error
         );
 
         throw error;
       } finally {
+        deletingRef.current = false;
         setDeletingEntryId(null);
       }
     },
-    [shopId, onDeleted, deletingEntryId]
+    [shopId, onDeleted]
   );
 
   return {

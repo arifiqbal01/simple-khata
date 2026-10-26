@@ -1,3 +1,4 @@
+
 from datetime import datetime
 from uuid import UUID, uuid4
 
@@ -24,7 +25,26 @@ class EntryItemRead(BaseModel):
 
 class UdhaarCreate(BaseModel):
     id: UUID = Field(default_factory=uuid4)
-    customer_id: UUID
+    party_id: UUID
+    device_id: UUID
+
+    amount: int = Field(gt=0)
+
+    note: str | None = Field(
+        default=None,
+        max_length=500,
+    )
+
+    occurred_at: datetime
+
+    items: list[EntryItemCreate] = Field(
+        default_factory=list,
+    )
+
+
+class SupplyCreate(BaseModel):
+    id: UUID = Field(default_factory=uuid4)
+    party_id: UUID
     device_id: UUID
 
     amount: int = Field(gt=0)
@@ -43,7 +63,7 @@ class UdhaarCreate(BaseModel):
 
 class PaymentCreate(BaseModel):
     id: UUID = Field(default_factory=uuid4)
-    customer_id: UUID
+    party_id: UUID
     device_id: UUID
 
     amount: int = Field(gt=0)
@@ -60,7 +80,7 @@ class LedgerEntryRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: UUID
-    customer_id: UUID
+    party_id: UUID
     device_id: UUID
     type: LedgerEntryType
     amount: int
@@ -71,12 +91,15 @@ class LedgerEntryRead(BaseModel):
     deleted_at: datetime | None
     deleted_by_device_id: UUID | None
 
-    items: list[EntryItemRead] = Field(default_factory=list)
+    items: list[EntryItemRead] = Field(
+        default_factory=list,
+    )
 
 
-class CustomerBalanceRead(BaseModel):
-    customer_id: UUID
+class PartyBalanceRead(BaseModel):
+    party_id: UUID
     balance: int
+
 
 class LedgerEntryDelete(BaseModel):
     device_id: UUID

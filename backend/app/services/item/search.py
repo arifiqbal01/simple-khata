@@ -1,3 +1,4 @@
+
 from uuid import UUID
 
 from app.models.item import Item
@@ -24,6 +25,7 @@ class SearchItemsService:
                 shop_id=shop_id,
                 limit=limit,
                 offset=offset,
+                include_deleted=False,
             )
 
         return self.repository.search(
@@ -31,4 +33,5 @@ class SearchItemsService:
             query=query.strip(),
             limit=limit,
             offset=offset,
+            include_deleted=False,
         )

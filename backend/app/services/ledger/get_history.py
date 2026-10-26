@@ -1,8 +1,9 @@
+
 from uuid import UUID
 
 from app.core.exceptions import NotFoundException
 from app.models.ledger_entry import LedgerEntry
-from app.repositories.customer import CustomerRepository
+from app.repositories.party_repository import PartyRepository
 from app.repositories.ledger_entry import LedgerEntryRepository
 
 
@@ -10,29 +11,29 @@ class GetLedgerHistoryService:
     def __init__(
         self,
         ledger_repository: LedgerEntryRepository,
-        customer_repository: CustomerRepository,
+        party_repository: PartyRepository,
     ) -> None:
         self.ledger_repository = ledger_repository
-        self.customer_repository = customer_repository
+        self.party_repository = party_repository
 
     def execute(
         self,
         *,
         shop_id: UUID,
-        customer_id: UUID,
+        party_id: UUID,
         limit: int = 100,
         offset: int = 0,
     ) -> list[LedgerEntry]:
-        customer = self.customer_repository.get_by_id_and_shop(
-            customer_id=customer_id,
+        party = self.party_repository.get_by_id_and_shop(
+            party_id=party_id,
             shop_id=shop_id,
         )
 
-        if customer is None:
-            raise NotFoundException("Customer not found")
+        if party is None:
+            raise NotFoundException("Party not found")
 
-        return self.ledger_repository.list_by_customer(
-            customer_id=customer_id,
+        return self.ledger_repository.list_by_party(
+            party_id=party_id,
             limit=limit,
             offset=offset,
         )

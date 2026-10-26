@@ -1,0 +1,16 @@
+export const ITEM_UNITS = [
+  { label: 'Piece (pc)', value: 'piece' },
+  { label: 'Kilogram (kg)', value: 'kg' },
+  { label: 'Gram (g)', value: 'g' },
+  { label: 'Liter (L)', value: 'liter' },
+  { label: 'Packet', value: 'packet' },
+  { label: 'Box', value: 'box' },
+  { label: 'Carton', value: 'carton' },
+  { label: 'Bag', value: 'bag' },
+  { label: 'Bottle', value: 'bottle' },
+  { label: 'Can', value: 'can' },
+  { label: 'Dozen', value: 'dozen' },
+  { label: 'Bundle', value: 'bundle' },
+  { label: 'Roll', value: 'roll' },
+  { label: 'Meter (m)', value: 'meter' },
+] as const;

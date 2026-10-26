@@ -1,6 +1,11 @@
 
 import '../../global.css';
 
+import React, {
+  useEffect,
+  useState,
+} from 'react';
+
 import {
   SplineSans_400Regular,
   SplineSans_500Medium,
@@ -16,20 +21,17 @@ import {
 
 import { Stack } from 'expo-router';
 
-import React, {
-  useEffect,
-  useState,
-} from 'react';
-
 import {
   ActivityIndicator,
   View,
 } from 'react-native';
 
+import { StatusBar } from 'expo-status-bar';
 import Toast from 'react-native-toast-message';
+
 import { toastConfig } from '@/components/ui/toastConfig';
+import { SyncLifecycle } from '@/components/sync';
 import { runMigrations } from '@/db/migrations';
-import SyncLifecycle from '@/services/sync/SyncLifecycle';
 
 const navigationTheme = {
   ...DefaultTheme,
@@ -62,6 +64,8 @@ export default function RootLayout() {
 
     async function initializeDatabase() {
       try {
+        // Complete all SQLite migrations before
+        // mounting app screens or starting sync.
         await runMigrations();
 
         if (cancelled) {
@@ -69,18 +73,18 @@ export default function RootLayout() {
         }
 
         setDatabaseReady(true);
-      } catch (error) {
+      } catch (cause) {
         if (cancelled) {
           return;
         }
 
         const normalizedError =
-          error instanceof Error
-            ? error
-            : new Error(String(error));
+          cause instanceof Error
+            ? cause
+            : new Error(String(cause));
 
         console.error(
-          'Database initialization failed:',
+          '[RootLayout] Database initialization failed:',
           normalizedError
         );
 
@@ -106,32 +110,59 @@ export default function RootLayout() {
   if (!fontsLoaded || !databaseReady) {
     return (
       <View className="flex-1 items-center justify-center bg-background">
-        <ActivityIndicator size="large" />
+        <StatusBar
+          style="dark"
+          backgroundColor="#F8F8F6"
+          translucent={false}
+        />
+
+        <ActivityIndicator
+          size="large"
+          color="#242422"
+        />
       </View>
     );
   }
 
   return (
     <ThemeProvider value={navigationTheme}>
+      <StatusBar
+        style="dark"
+        backgroundColor="#F8F8F6"
+        translucent={false}
+      />
+
+      {/* Start sync only after database migrations. */}
       <SyncLifecycle />
 
       <Stack
         screenOptions={{
           headerShown: false,
+          contentStyle: {
+            backgroundColor: '#F7F7F5',
+          },
         }}
       >
-        <Stack.Screen name="(tabs)" />
+        <Stack.Screen
+          name="(tabs)"
+          options={{
+            headerShown: false,
+          }}
+        />
 
         <Stack.Screen
           name="bootstrap"
           options={{
+            headerShown: false,
             gestureEnabled: false,
           }}
         />
       </Stack>
 
-      {/* Global toast notifications */}
-      <Toast config={toastConfig} topOffset={55} />
+      <Toast
+        config={toastConfig}
+        topOffset={55}
+      />
     </ThemeProvider>
   );
 }

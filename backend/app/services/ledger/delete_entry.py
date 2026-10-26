@@ -1,3 +1,4 @@
+
 from datetime import datetime
 from uuid import UUID
 
@@ -9,7 +10,7 @@ from app.core.exceptions import (
     NotFoundException,
 )
 from app.models.ledger_entry import LedgerEntry
-from app.repositories.customer import CustomerRepository
+from app.repositories.party_repository import PartyRepository
 from app.repositories.device import DeviceRepository
 from app.repositories.ledger_entry import LedgerEntryRepository
 
@@ -19,12 +20,12 @@ class DeleteLedgerEntryService:
         self,
         db: Session,
         ledger_repository: LedgerEntryRepository,
-        customer_repository: CustomerRepository,
+        party_repository: PartyRepository,
         device_repository: DeviceRepository,
     ) -> None:
         self.db = db
         self.ledger_repository = ledger_repository
-        self.customer_repository = customer_repository
+        self.party_repository = party_repository
         self.device_repository = device_repository
 
     def execute(
@@ -40,12 +41,15 @@ class DeleteLedgerEntryService:
         if entry is None:
             raise NotFoundException("Ledger entry not found")
 
-        customer = self.customer_repository.get_by_id_and_shop(
-            customer_id=entry.customer_id,
+        # Include deleted parties so existing ledger entries
+        # can still be resolved and deleted.
+        party = self.party_repository.get_by_id_and_shop(
+            party_id=entry.party_id,
             shop_id=shop_id,
+            include_deleted=True,
         )
 
-        if customer is None:
+        if party is None:
             raise NotFoundException("Ledger entry not found")
 
         device = self.device_repository.get_by_id_and_shop(
@@ -56,8 +60,8 @@ class DeleteLedgerEntryService:
         if device is None:
             raise NotFoundException("Device not found")
 
-        # Entity-level idempotency:
-        # deleting an already-deleted entry is a no-op.
+        # Idempotency: deleting an already-deleted entry
+        # must not overwrite its original deletion metadata.
         if entry.deleted_at is not None:
             return entry
 
@@ -70,7 +74,9 @@ class DeleteLedgerEntryService:
 
             self.db.commit()
 
-            saved_entry = self.ledger_repository.get_by_id(entry.id)
+            saved_entry = self.ledger_repository.get_by_id(
+                entry.id,
+            )
 
             if saved_entry is None:
                 raise RuntimeError(

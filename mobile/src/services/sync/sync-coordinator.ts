@@ -1,5 +1,10 @@
-import { LocalIdentityRepository } from '@/repositories/local-identity';
-import { SyncOutboxRepository } from '@/repositories/sync-outbox';
+
+import { LocalIdentityRepository } from '@/repositories/bootstrap/local-identity';
+
+import {
+  SyncOutboxRepository,
+} from '@/repositories/sync/sync-outbox';
+
 import {
   syncNow,
   type SyncNowResult,
@@ -11,6 +16,10 @@ const localIdentityRepository =
 const syncOutboxRepository =
   new SyncOutboxRepository();
 
+/**
+ * Only one sync cycle can run at a time
+ * within this JavaScript runtime.
+ */
 let activeSync: Promise<SyncNowResult> | null = null;
 
 export type SyncStatus =
@@ -26,8 +35,10 @@ export interface SyncState {
   lastSyncedAt: string | null;
 
   /**
-   * Incremented after every successful sync.
-   * Screens can subscribe to this to reload local SQLite data.
+   * Incremented after each successful sync.
+   *
+   * Screens can subscribe to this value
+   * and reload their local SQLite data.
    */
   dataVersion: number;
 }
@@ -44,10 +55,20 @@ type SyncStateListener = () => void;
 
 const listeners = new Set<SyncStateListener>();
 
+/**
+ * Return the current immutable state snapshot.
+ *
+ * Compatible with useSyncExternalStore.
+ */
 export function getSyncState(): SyncState {
   return syncState;
 }
 
+/**
+ * Subscribe to coordinator state changes.
+ *
+ * Returns an unsubscribe function.
+ */
 export function subscribeToSyncState(
   listener: SyncStateListener
 ): () => void {
@@ -58,6 +79,11 @@ export function subscribeToSyncState(
   };
 }
 
+/**
+ * Refresh the pending outbox count.
+ *
+ * This does not start a network sync.
+ */
 export async function refreshSyncState(): Promise<void> {
   const pendingCount =
     await syncOutboxRepository.countPending();
@@ -66,6 +92,15 @@ export async function refreshSyncState(): Promise<void> {
     pendingCount,
   });
 }
+
+/**
+ * Request a synchronization cycle.
+ *
+ * Concurrent callers join the same promise.
+ *
+ * A completed sync releases the lock so
+ * another request can start a new cycle.
+ */
 
 export function requestSync(): Promise<SyncNowResult> {
   if (activeSync) {
@@ -77,18 +112,60 @@ export function requestSync(): Promise<SyncNowResult> {
   }
 
   console.log(
-    '[sync-coordinator] starting new sync'
+    '[sync-coordinator] checking installation identity'
   );
 
-  updateSyncState({
-    status: 'syncing',
-    lastError: null,
-  });
+  const syncPromise = (async (): Promise<SyncNowResult> => {
+    const identity =
+      await localIdentityRepository.get();
 
-  activeSync = performSyncRequest()
-    .then(async (result) => {
-      const pendingCount =
-        await syncOutboxRepository.countPending();
+    if (!identity) {
+      updateSyncState({
+        status: 'idle',
+        lastError: null,
+      });
+
+      throw new Error(
+        'Sync unavailable: installation setup is not complete'
+      );
+    }
+
+    const shopId = identity.shopId?.trim();
+    const deviceId = identity.deviceId?.trim();
+
+    if (!shopId || !deviceId) {
+      updateSyncState({
+        status: 'idle',
+        lastError: null,
+      });
+
+      throw new Error(
+        'Sync unavailable: local installation identity is incomplete'
+      );
+    }
+
+    updateSyncState({
+      status: 'syncing',
+      lastError: null,
+    });
+
+    try {
+      const result = await syncNow({
+        shopId,
+        deviceId,
+      });
+
+      let pendingCount = result.push.remaining;
+
+      try {
+        pendingCount =
+          await syncOutboxRepository.countPending();
+      } catch (countError) {
+        console.warn(
+          '[sync-coordinator] pending count refresh failed',
+          countError
+        );
+      }
 
       updateSyncState({
         status: 'synced',
@@ -98,11 +175,19 @@ export function requestSync(): Promise<SyncNowResult> {
         dataVersion: syncState.dataVersion + 1,
       });
 
+      console.log(
+        '[sync-coordinator] sync completed',
+        {
+          pushed: result.push.pushed,
+          pulled: result.pull.pulled,
+          remaining: pendingCount,
+        }
+      );
+
       return result;
-    })
-    .catch(async (error) => {
+    } catch (error) {
       console.error(
-        '[sync-coordinator] sync failed:',
+        '[sync-coordinator] sync failed',
         error
       );
 
@@ -112,8 +197,8 @@ export function requestSync(): Promise<SyncNowResult> {
         pendingCount =
           await syncOutboxRepository.countPending();
       } catch (countError) {
-        console.error(
-          '[sync-coordinator] failed to count pending operations:',
+        console.warn(
+          '[sync-coordinator] failed to count pending operations',
           countError
         );
       }
@@ -130,18 +215,30 @@ export function requestSync(): Promise<SyncNowResult> {
       });
 
       throw error;
-    })
-    .finally(() => {
-      console.log(
-        '[sync-coordinator] sync finished'
-      );
+    }
+  })();
 
+  activeSync = syncPromise;
+
+  void syncPromise.finally(() => {
+    if (activeSync === syncPromise) {
       activeSync = null;
-    });
+    }
+  }).catch(() => {
+    // The original promise carries the error to its caller.
+  });
 
-  return activeSync;
+  return syncPromise;
 }
 
+
+/**
+ * Resolve the local installation identity
+ * and execute one complete sync cycle.
+ *
+ * The identity comes from local SQLite.
+ * It must not be generated during sync.
+ */
 async function performSyncRequest(): Promise<SyncNowResult> {
   const identity =
     await localIdentityRepository.get();
@@ -152,12 +249,28 @@ async function performSyncRequest(): Promise<SyncNowResult> {
     );
   }
 
+  const shopId = identity.shopId.trim();
+  const deviceId = identity.deviceId.trim();
+
+  if (!shopId || !deviceId) {
+    throw new Error(
+      'Local installation identity is incomplete'
+    );
+  }
+
   return syncNow({
-    shopId: identity.shopId,
-    deviceId: identity.deviceId,
+    shopId,
+    deviceId,
   });
 }
 
+/**
+ * Publish a new state snapshot.
+ *
+ * Each update creates a new object so
+ * React external-store subscriptions can
+ * detect the change.
+ */
 function updateSyncState(
   patch: Partial<SyncState>
 ): void {
@@ -167,6 +280,17 @@ function updateSyncState(
   };
 
   for (const listener of listeners) {
-    listener();
+    try {
+      listener();
+    } catch (error) {
+      /*
+       * A broken subscriber must not interrupt
+       * synchronization or other subscribers.
+       */
+      console.error(
+        '[sync-coordinator] state listener failed',
+        error
+      );
+    }
   }
 }

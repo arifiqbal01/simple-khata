@@ -1,13 +1,13 @@
 
-import { CustomerRepository } from '@/repositories/customer';
+import { PartyRepository } from '@/repositories/party/party';
 
 import {
-  LedgerRepository,
+  LedgerHistoryRepository,
   type LedgerHistoryEntry,
   type LedgerHistoryCursor,
   type LedgerHistoryFilter,
   type LedgerHistoryPage,
-} from '@/repositories/ledger';
+} from '@/repositories/ledger/ledger-history';
 
 export interface GetLedgerHistoryInput {
   shopId: string;
@@ -26,43 +26,46 @@ export interface GetLedgerHistoryPageInput {
 
 export class GetLedgerHistoryService {
   constructor(
-    private readonly ledgerRepository: LedgerRepository,
-    private readonly customerRepository: CustomerRepository
+    private readonly ledgerHistoryRepository: LedgerHistoryRepository,
+    private readonly partyRepository: PartyRepository
   ) {}
 
   /**
-   * Verify that the customer belongs to the shop.
+   * Verify that the Party belongs to this shop
+   * and is an active CUSTOMER.
    */
   private async validateCustomer(
     shopId: string,
     customerId: string
   ): Promise<void> {
-    if (!shopId || !customerId) {
+    if (!shopId.trim() || !customerId.trim()) {
       throw new Error(
         'Shop ID and customer ID are required'
       );
     }
 
     const customer =
-      await this.customerRepository.getByIdAndShop(
+      await this.partyRepository.getByIdAndShop(
         customerId,
         shopId
       );
 
-    if (!customer) {
+    if (!customer || customer.type !== 'CUSTOMER') {
       throw new Error('Customer not found');
     }
   }
 
   /**
-   * Existing offset-based history method.
+   * Offset-based history.
    *
-   * Kept for backward compatibility with
-   * screens that still use execute().
+   * Retained for existing screens using execute().
    */
   async execute(
     input: GetLedgerHistoryInput
   ): Promise<LedgerHistoryEntry[]> {
+    const shopId = input.shopId.trim();
+    const customerId = input.customerId.trim();
+
     const limit = input.limit ?? 100;
     const offset = input.offset ?? 0;
 
@@ -86,20 +89,20 @@ export class GetLedgerHistoryService {
     }
 
     await this.validateCustomer(
-      input.shopId,
-      input.customerId
+      shopId,
+      customerId
     );
 
-    return this.ledgerRepository.listByCustomer(
-      input.shopId,
-      input.customerId,
+    return this.ledgerHistoryRepository.listByParty(
+      shopId,
+      customerId,
       limit,
       offset
     );
   }
 
   /**
-   * New cursor-based history method.
+   * Cursor-based history.
    *
    * Supports:
    * - Infinite scrolling
@@ -110,6 +113,9 @@ export class GetLedgerHistoryService {
   async executePage(
     input: GetLedgerHistoryPageInput
   ): Promise<LedgerHistoryPage> {
+    const shopId = input.shopId.trim();
+    const customerId = input.customerId.trim();
+
     const limit = input.limit ?? 30;
 
     if (
@@ -152,13 +158,13 @@ export class GetLedgerHistoryService {
     }
 
     await this.validateCustomer(
-      input.shopId,
-      input.customerId
+      shopId,
+      customerId
     );
 
-    return this.ledgerRepository.getHistoryPage(
-      input.shopId,
-      input.customerId,
+    return this.ledgerHistoryRepository.getHistoryPage(
+      shopId,
+      customerId,
       {
         limit,
         cursor: input.cursor ?? null,

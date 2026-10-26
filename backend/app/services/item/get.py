@@ -1,3 +1,4 @@
+
 from uuid import UUID
 
 from app.core.exceptions import NotFoundException
@@ -21,6 +22,7 @@ class GetItemService:
         item = self.repository.get_by_id_and_shop(
             item_id=item_id,
             shop_id=shop_id,
+            include_deleted=False,
         )
 
         if item is None:

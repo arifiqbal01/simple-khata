@@ -1,3 +1,4 @@
+
 from uuid import UUID
 
 from sqlalchemy.exc import IntegrityError
@@ -5,28 +6,42 @@ from sqlalchemy.orm import Session
 
 from app.core.exceptions import SyncConflictException
 from app.models.sync_operation import SyncOperation
+from app.repositories.item import ItemRepository
 from app.repositories.ledger_entry import LedgerEntryRepository
 from app.repositories.sync import SyncRepository
 from app.schemas.sync import (
-    CustomerCreateOperation,
-    CustomerUpdateOperation,
     ItemCreateOperation,
     ItemUpdateOperation,
+    ItemDeleteOperation,
+    ItemDeletePayload,
+    SupplierItemCreateOperation,
+    SupplierItemUpdateOperation,
+    SupplierItemDeleteOperation,
     LedgerEntryCreateOperation,
     LedgerEntryDeleteOperation,
     LedgerEntryDeletePayload,
+    PartyCreateOperation,
+    PartyUpdateOperation,
+    PartyDeleteOperation,
     SyncPushOperation,
     SyncPushRequest,
     SyncPushResponse,
 )
 from app.services.sync.identity import validate_sync_identity
-from app.services.sync.operations.customer import (
-    apply_customer_create,
-    apply_customer_update,
-)
 from app.services.sync.operations.item import (
     apply_item_create,
     apply_item_update,
+    apply_item_delete,
+)
+from app.services.sync.operations.supplier_item import (
+    apply_supplier_item_create,
+    apply_supplier_item_update,
+    apply_supplier_item_delete,
+)
+from app.services.sync.operations.party import (
+    apply_party_create,
+    apply_party_update,
+    apply_party_delete,
 )
 from app.services.sync.operations import (
     apply_ledger_entry_create,
@@ -83,14 +98,10 @@ class PushSyncService:
                     operation=operation,
                 )
 
-                # Normally sync changes contain the submitted payload.
                 change_payload = operation.payload.model_dump(
                     mode="json"
                 )
 
-                # For deletions, publish the canonical tombstone
-                # stored in PostgreSQL, not necessarily the incoming
-                # device's deletion metadata.
                 if isinstance(
                     operation,
                     LedgerEntryDeleteOperation,
@@ -99,14 +110,13 @@ class PushSyncService:
                         self.db
                     ).get_by_id(operation.entityId)
 
-                    if entry is None or entry.deleted_at is None:
+                    if (
+                        entry is None
+                        or entry.deleted_at is None
+                        or entry.deleted_by_device_id is None
+                    ):
                         raise SyncConflictException(
                             "Deleted ledger entry could not be loaded"
-                        )
-
-                    if entry.deleted_by_device_id is None:
-                        raise SyncConflictException(
-                            "Deleting device is missing"
                         )
 
                     change_payload = LedgerEntryDeletePayload(
@@ -115,6 +125,37 @@ class PushSyncService:
                             "deletedAt": entry.deleted_at,
                             "deletedByDeviceId": (
                                 entry.deleted_by_device_id
+                            ),
+                        }
+                    ).model_dump(mode="json")
+
+                elif isinstance(
+                    operation,
+                    ItemDeleteOperation,
+                ):
+                    item = ItemRepository(
+                        self.db
+                    ).get_by_id_and_shop(
+                        item_id=operation.entityId,
+                        shop_id=data.shopId,
+                        include_deleted=True,
+                    )
+
+                    if (
+                        item is None
+                        or item.deleted_at is None
+                        or item.deleted_by_device_id is None
+                    ):
+                        raise SyncConflictException(
+                            "Deleted item could not be loaded"
+                        )
+
+                    change_payload = ItemDeletePayload(
+                        item={
+                            "id": item.id,
+                            "deletedAt": item.deleted_at,
+                            "deletedByDeviceId": (
+                                item.deleted_by_device_id
                             ),
                         }
                     ).model_dump(mode="json")
@@ -193,18 +234,27 @@ class PushSyncService:
         device_id: UUID,
         operation: SyncPushOperation,
     ) -> None:
-        if isinstance(operation, CustomerCreateOperation):
-            apply_customer_create(
+        if isinstance(operation, PartyCreateOperation):
+            apply_party_create(
                 self.db,
                 shop_id=shop_id,
                 operation=operation,
             )
             return
 
-        if isinstance(operation, CustomerUpdateOperation):
-            apply_customer_update(
+        if isinstance(operation, PartyUpdateOperation):
+            apply_party_update(
                 self.db,
                 shop_id=shop_id,
+                operation=operation,
+            )
+            return
+
+        if isinstance(operation, PartyDeleteOperation):
+            apply_party_delete(
+                self.db,
+                shop_id=shop_id,
+                device_id=device_id,
                 operation=operation,
             )
             return
@@ -219,6 +269,39 @@ class PushSyncService:
 
         if isinstance(operation, ItemUpdateOperation):
             apply_item_update(
+                self.db,
+                shop_id=shop_id,
+                operation=operation,
+            )
+            return
+
+        if isinstance(operation, ItemDeleteOperation):
+            apply_item_delete(
+                self.db,
+                shop_id=shop_id,
+                device_id=device_id,
+                operation=operation,
+            )
+            return
+
+        if isinstance(operation, SupplierItemCreateOperation):
+            apply_supplier_item_create(
+                self.db,
+                shop_id=shop_id,
+                operation=operation,
+            )
+            return
+
+        if isinstance(operation, SupplierItemUpdateOperation):
+            apply_supplier_item_update(
+                self.db,
+                shop_id=shop_id,
+                operation=operation,
+            )
+            return
+
+        if isinstance(operation, SupplierItemDeleteOperation):
+            apply_supplier_item_delete(
                 self.db,
                 shop_id=shop_id,
                 operation=operation,

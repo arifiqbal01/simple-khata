@@ -1,6 +1,6 @@
-import { DeviceRepository } from '@/repositories/device';
-import { LocalIdentityRepository } from '@/repositories/local-identity';
-import { ShopRepository } from '@/repositories/shop';
+import { DeviceRepository } from '@/repositories/bootstrap/device';
+import { LocalIdentityRepository } from '@/repositories/bootstrap/local-identity';
+import { ShopRepository } from '@/repositories/bootstrap/shop';
 import type { Device, Shop } from '@/types/domain';
 
 export interface AppIdentity {

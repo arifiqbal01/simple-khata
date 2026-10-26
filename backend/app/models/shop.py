@@ -1,3 +1,4 @@
+
 from typing import TYPE_CHECKING
 
 from sqlalchemy import String
@@ -7,9 +8,10 @@ from app.db.base import Base
 from app.db.mixins import CreatedAtMixin, UUIDPrimaryKeyMixin
 
 if TYPE_CHECKING:
-    from app.models.customer import Customer
     from app.models.device import Device
     from app.models.item import Item
+    from app.models.party import Party
+    from app.models.supplier_item import SupplierItem
 
 
 class Shop(UUIDPrimaryKeyMixin, CreatedAtMixin, Base):
@@ -24,10 +26,15 @@ class Shop(UUIDPrimaryKeyMixin, CreatedAtMixin, Base):
         back_populates="shop",
     )
 
-    customers: Mapped[list["Customer"]] = relationship(
+    parties: Mapped[list["Party"]] = relationship(
         back_populates="shop",
     )
 
     items: Mapped[list["Item"]] = relationship(
+        back_populates="shop",
+    )
+
+    # Products and purchase prices configured for suppliers.
+    supplier_items: Mapped[list["SupplierItem"]] = relationship(
         back_populates="shop",
     )

@@ -1,7 +1,8 @@
+
 from datetime import datetime
 from uuid import UUID, uuid4
 
-from sqlalchemy import DateTime
+from sqlalchemy import DateTime, ForeignKey
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.sql import func
@@ -29,4 +30,18 @@ class TimestampMixin(CreatedAtMixin):
         server_default=func.now(),
         onupdate=func.now(),
         nullable=False,
+    )
+
+
+class SoftDeleteMixin:
+    deleted_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+
+    deleted_by_device_id: Mapped[UUID | None] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("devices.id"),
+        nullable=True,
+        index=True,
     )

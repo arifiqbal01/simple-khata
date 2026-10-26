@@ -1,15 +1,18 @@
+
 import React from 'react';
+
 import {
   Pressable,
   View,
 } from 'react-native';
+
 import { Ionicons } from '@expo/vector-icons';
+
 import type {
   BottomTabBarProps,
 } from '@react-navigation/bottom-tabs';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { AppText } from '@/components/ui';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 interface TabDefinition {
   label: string;
@@ -24,10 +27,22 @@ const tabs: Record<string, TabDefinition> = {
     activeIcon: 'home',
   },
 
-  customers: {
+  customer: {
     label: 'Customers',
     icon: 'people-outline',
     activeIcon: 'people',
+  },
+
+  suppliers: {
+    label: 'Suppliers',
+    icon: 'business-outline',
+    activeIcon: 'business',
+  },
+
+  items: {
+    label: 'Items',
+    icon: 'cube-outline',
+    activeIcon: 'cube',
   },
 };
 
@@ -40,39 +55,32 @@ export function BottomNavigation({
 
   const activeRoute = state.routes[state.index];
 
-  // Customer ledger / forms should not have the
-  // root tab bar.
-  if (!tabs[activeRoute.name]) {
+  if (!activeRoute || !tabs[activeRoute.name]) {
     return null;
   }
 
   const visibleRoutes = state.routes.filter(
-    (route) => tabs[route.name]
+    (route) => Boolean(tabs[route.name])
   );
 
   return (
     <View
       className="border-t border-border bg-surface"
       style={{
-        paddingBottom: Math.max(
-          insets.bottom,
-          4
-        ),
+        paddingBottom: Math.max(insets.bottom, 4),
       }}
     >
-      <View className="flex-row px-6 pt-1">
+      <View className="flex-row px-3 pb-1 pt-2">
         {visibleRoutes.map((route) => {
-          const routeIndex =
-            state.routes.findIndex(
-              (item) => item.key === route.key
-            );
+          const routeIndex = state.routes.findIndex(
+            (item) => item.key === route.key
+          );
 
           const isFocused =
             state.index === routeIndex;
 
           const definition = tabs[route.name];
-          const descriptor =
-            descriptors[route.key];
+          const descriptor = descriptors[route.key];
 
           function handlePress() {
             const event = navigation.emit({
@@ -81,14 +89,35 @@ export function BottomNavigation({
               canPreventDefault: true,
             });
 
+            if (event.defaultPrevented) {
+              return;
+            }
+
+            /*
+             * Always open the root list screen
+             * for tabs with nested stacks.
+             *
+             * This prevents the Customers tab
+             * from reopening Udhaar or a ledger.
+             */
             if (
-              !isFocused &&
-              !event.defaultPrevented
+              route.name === 'customer' ||
+              route.name === 'suppliers' ||
+              route.name === 'items'
             ) {
-              navigation.navigate(
-                route.name,
-                route.params
-              );
+              navigation.navigate(route.name, {
+                screen: 'index',
+                params: {},
+              });
+
+              return;
+            }
+
+            /*
+             * Home is a direct tab screen.
+             */
+            if (!isFocused) {
+              navigation.navigate(route.name);
             }
           }
 
@@ -109,40 +138,45 @@ export function BottomNavigation({
               key={route.key}
               onPress={handlePress}
               onLongPress={handleLongPress}
-              accessibilityRole="button"
-              accessibilityState={
-                isFocused
-                  ? { selected: true }
-                  : {}
-              }
+              accessibilityRole="tab"
+              accessibilityState={{
+                selected: isFocused,
+              }}
               accessibilityLabel={
                 accessibilityLabel
               }
-              className="min-h-[48px] flex-1 flex-row items-center justify-center gap-2 rounded-control active:bg-chip"
+              accessibilityHint={`Open ${definition.label}`}
+              hitSlop={4}
+              className="
+                min-h-[48px]
+                flex-1
+                items-center
+                justify-center
+                rounded-control
+                active:bg-chip
+              "
             >
-              <Ionicons
-                name={
-                  isFocused
-                    ? definition.activeIcon
-                    : definition.icon
-                }
-                size={20}
-                color={
-                  isFocused
-                    ? '#181816'
-                    : '#9A9A93'
-                }
-              />
-
-              <AppText
+              <View
                 className={
                   isFocused
-                    ? 'font-spline-semibold text-[13px] text-foreground'
-                    : 'font-spline-medium text-[13px] text-subtle'
+                    ? 'h-10 w-14 items-center justify-center rounded-full bg-chip'
+                    : 'h-10 w-14 items-center justify-center rounded-full'
                 }
               >
-                {definition.label}
-              </AppText>
+                <Ionicons
+                  name={
+                    isFocused
+                      ? definition.activeIcon
+                      : definition.icon
+                  }
+                  size={23}
+                  color={
+                    isFocused
+                      ? '#181816'
+                      : '#9A9A93'
+                  }
+                />
+              </View>
             </Pressable>
           );
         })}
