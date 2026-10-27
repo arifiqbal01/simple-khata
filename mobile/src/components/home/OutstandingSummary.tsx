@@ -16,6 +16,17 @@ interface OutstandingSummaryProps {
   moneyIn?: number;
 }
 
+const COLORS = {
+  background: '#191B1E',
+  border: '#383B40',
+  heading: '#D6D8DC',
+  label: '#B7BBC1',
+  amount: '#FFFFFF',
+  divider: '#3B3F45',
+  receive: '#6ED9A0',
+  pay: '#F08F8A',
+};
+
 function safeAmount(value: number): number {
   return Number.isFinite(value) ? value : 0;
 }
@@ -62,7 +73,9 @@ function SummaryMetric({
             }
             size={17}
             color={
-              isReceive ? '#6ED9A0' : '#F08F8A'
+              isReceive
+                ? COLORS.receive
+                : COLORS.pay
             }
           />
         </View>
@@ -71,7 +84,12 @@ function SummaryMetric({
           numberOfLines={1}
           adjustsFontSizeToFit
           minimumFontScale={0.75}
-          className="min-w-0 flex-1 font-spline-medium text-[12px] text-[#B7B9BD]"
+          className="min-w-0 flex-1 font-spline-medium"
+          style={{
+            color: COLORS.label,
+            fontSize: 12,
+            lineHeight: 17,
+          }}
         >
           {label}
         </AppText>
@@ -81,8 +99,11 @@ function SummaryMetric({
         numberOfLines={1}
         adjustsFontSizeToFit
         minimumFontScale={0.55}
-        className="font-spline-semibold text-[18px] leading-[25px] text-white"
+        className="font-spline-semibold"
         style={{
+          color: COLORS.amount,
+          fontSize: 18,
+          lineHeight: 25,
           fontVariant: ['tabular-nums'],
         }}
       >
@@ -127,8 +148,11 @@ export function OutstandingSummary({
   return (
     <View className="pb-6 pt-3">
       <View
-        className="overflow-hidden rounded-[28px] border border-[#383B40] bg-[#191B1E]"
+        className="overflow-hidden rounded-[28px]"
         style={{
+          backgroundColor: COLORS.background,
+          borderColor: COLORS.border,
+          borderWidth: 1,
           shadowColor: '#111214',
           shadowOffset: {
             width: 0,
@@ -139,26 +163,33 @@ export function OutstandingSummary({
           elevation: 5,
         }}
       >
-        {/* Metallic top highlight */}
         <View
-          className="h-px"
           style={{
+            height: 1,
             backgroundColor: '#565A60',
             opacity: 0.65,
           }}
         />
 
         <View className="px-5 pb-5 pt-5">
-          {/* Card header */}
           <View className="flex-row items-center justify-between">
-            <View className="flex-row items-center gap-2">
+            <View className="min-w-0 flex-1 flex-row items-center gap-2">
               <Ionicons
                 name="wallet-outline"
                 size={17}
-                color="#B7BBC1"
+                color={COLORS.heading}
               />
 
-              <AppText className="font-spline-medium text-[11px] tracking-[1.2px] text-[#B7BBC1]">
+              <AppText
+                numberOfLines={1}
+                className="font-spline-medium"
+                style={{
+                  color: COLORS.heading,
+                  fontSize: 11,
+                  lineHeight: 16,
+                  letterSpacing: 1.2,
+                }}
+              >
                 FINANCIAL OVERVIEW
               </AppText>
             </View>
@@ -175,8 +206,14 @@ export function OutstandingSummary({
                   ? 'Hide financial amounts'
                   : 'Show financial amounts'
               }
+              accessibilityState={{
+                checked: amountsVisible,
+              }}
               hitSlop={8}
-              className="h-9 w-9 items-center justify-center rounded-full bg-[#303338]"
+              className="ml-3 h-9 w-9 items-center justify-center rounded-full"
+              style={{
+                backgroundColor: '#303338',
+              }}
             >
               <Ionicons
                 name={
@@ -190,11 +227,15 @@ export function OutstandingSummary({
             </Pressable>
           </View>
 
-          {/* Compact single-line balance */}
           <View className="mt-5 flex-row items-center justify-between gap-3">
             <AppText
               numberOfLines={1}
-              className="shrink-0 font-spline-medium text-[14px] text-[#A9ADB3]"
+              className="shrink-0 font-spline-medium"
+              style={{
+                color: COLORS.label,
+                fontSize: 13,
+                lineHeight: 19,
+              }}
             >
               {isPartySummary
                 ? 'Net Balance'
@@ -205,9 +246,13 @@ export function OutstandingSummary({
               numberOfLines={1}
               adjustsFontSizeToFit
               minimumFontScale={0.55}
-              className="min-w-0 flex-1 text-right font-spline-bold text-[25px] leading-[34px] text-white"
+              className="min-w-0 flex-1 text-right font-spline-bold"
               style={{
+                color: COLORS.amount,
+                fontSize: 24,
+                lineHeight: 33,
                 fontVariant: ['tabular-nums'],
+                textAlign: 'right',
               }}
             >
               {amountsVisible
@@ -216,15 +261,14 @@ export function OutstandingSummary({
             </AppText>
           </View>
 
-          {/* Divider */}
           <View
-            className="mb-4 mt-5 h-px"
+            className="mb-4 mt-5"
             style={{
-              backgroundColor: '#3B3F45',
+              height: 1,
+              backgroundColor: COLORS.divider,
             }}
           />
 
-          {/* Receive / Pay */}
           <View className="flex-row">
             <SummaryMetric
               label={
@@ -242,8 +286,9 @@ export function OutstandingSummary({
             />
 
             <View
-              className="mx-4 w-px self-stretch"
+              className="mx-4 self-stretch"
               style={{
+                width: 1,
                 backgroundColor: '#34383E',
               }}
             />
@@ -261,7 +306,9 @@ export function OutstandingSummary({
               }
               visible={amountsVisible}
               direction={
-                isPartySummary ? 'pay' : 'receive'
+                isPartySummary
+                  ? 'pay'
+                  : 'receive'
               }
             />
           </View>

@@ -25,7 +25,11 @@ export function MoneySummary({
   return (
     <View className="flex-row gap-3">
       <MoneySummaryCard
-        type={isPartySummary ? 'receive' : 'out'}
+        type={
+          isPartySummary
+            ? 'receive'
+            : 'out'
+        }
         amount={
           isPartySummary
             ? (toReceive ?? 0)
@@ -35,7 +39,11 @@ export function MoneySummary({
       />
 
       <MoneySummaryCard
-        type={isPartySummary ? 'pay' : 'in'}
+        type={
+          isPartySummary
+            ? 'pay'
+            : 'in'
+        }
         amount={
           isPartySummary
             ? (toPay ?? 0)
