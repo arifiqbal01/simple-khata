@@ -20,12 +20,10 @@ export interface PartyRowData {
   balance: number;
   type: PartyRowType;
 
-  // Repository fields.
   last_activity_at?: DateValue;
   created_at?: DateValue;
   updated_at?: DateValue;
 
-  // Compatibility with camelCase callers.
   lastActivityAt?: DateValue;
   createdAt?: DateValue;
 }
@@ -81,17 +79,26 @@ function formatLastActivity(
     return null;
   }
 
-  const dateText = date.toLocaleDateString('en-PK', {
+  const now = new Date();
+
+  const isCurrentYear =
+    date.getFullYear() === now.getFullYear();
+
+  const dateText = date.toLocaleDateString('en-GB', {
     day: 'numeric',
     month: 'short',
-    year: 'numeric',
+    ...(!isCurrentYear
+      ? { year: 'numeric' as const }
+      : {}),
   });
 
-  const timeText = date.toLocaleTimeString('en-PK', {
-    hour: 'numeric',
-    minute: '2-digit',
-    hour12: true,
-  });
+  const timeText = date
+    .toLocaleTimeString('en-US', {
+      hour: 'numeric',
+      minute: '2-digit',
+      hour12: true,
+    })
+    .toLowerCase();
 
   return `${dateText} · ${timeText}`;
 }
@@ -126,11 +133,11 @@ export function PartyRow({
   return (
     <View
       className={`
-        min-h-[68px]
+        min-h-[64px]
         flex-row
         items-center
         border-border
-        px-4
+        px-3
         ${selected ? 'bg-chip' : 'bg-surface'}
         ${first ? 'rounded-t-[16px]' : ''}
         ${last ? 'rounded-b-[16px]' : ''}
@@ -168,8 +175,8 @@ export function PartyRow({
       >
         <View
           className="
-            h-9
-            w-9
+            h-8
+            w-8
             shrink-0
             items-center
             justify-center
@@ -183,18 +190,20 @@ export function PartyRow({
                 ? 'business-outline'
                 : 'person-outline'
             }
-            size={17}
+            size={16}
             color="#242422"
           />
         </View>
 
-        <View className="ml-3 min-w-0 flex-1 gap-0.5">
+        <View className="ml-2.5 min-w-0 flex-1">
           <AppText
             numberOfLines={1}
+            style={{
+              fontSize: 14,
+              lineHeight: 19,
+            }}
             className="
               font-spline-semibold
-              text-[15px]
-              leading-[21px]
               text-foreground
             "
           >
@@ -204,29 +213,31 @@ export function PartyRow({
           {lastActivity ? (
             <AppText
               numberOfLines={1}
-              className="
-                font-spline-medium
-                text-[11px]
-                leading-[16px]
-                text-muted
-              "
+              ellipsizeMode="tail"
+              allowFontScaling={false}
+              style={{
+                fontSize: 10,
+                lineHeight: 15,
+                color: '#85857F',
+                marginTop: 2,
+              }}
             >
               {lastActivity}
             </AppText>
           ) : null}
         </View>
 
-        <View className="ml-2 min-w-0 max-w-[44%] items-end">
+        <View className="ml-2 max-w-[46%] items-end">
           <AppText
             numberOfLines={1}
             adjustsFontSizeToFit
             minimumFontScale={0.7}
-            style={{ color: amountColor }}
-            className="
-              font-spline-semibold
-              text-[15px]
-              leading-[22px]
-            "
+            style={{
+              color: amountColor,
+              fontSize: 14,
+              lineHeight: 20,
+            }}
+            className="font-spline-semibold"
           >
             Rs {formatRupees(party.balance)}
           </AppText>
@@ -245,9 +256,9 @@ export function PartyRow({
           }}
           hitSlop={8}
           className="
-            ml-2
-            h-9
-            w-9
+            ml-1
+            h-8
+            w-8
             items-center
             justify-center
             rounded-lg
@@ -262,7 +273,7 @@ export function PartyRow({
           ) : (
             <Ionicons
               name="trash-outline"
-              size={17}
+              size={16}
               color="#DC2626"
             />
           )}
@@ -283,7 +294,7 @@ export function PartyRow({
         }}
         hitSlop={10}
         className="
-          ml-3
+          ml-2
           h-8
           w-8
           shrink-0

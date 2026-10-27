@@ -32,16 +32,20 @@ export function MoneySummaryCard({
     ? Math.max(0, amount)
     : 0;
 
+  const accentColor = isReceive
+    ? '#16A34A'
+    : '#DC2626';
+
   return (
     <View className="min-w-0 flex-1 rounded-2xl border border-border bg-surface px-4 py-3">
-      {/* Label and direction */}
       <View className="mb-2 flex-row items-center gap-2">
         <View
-          className={`h-7 w-7 items-center justify-center rounded-full ${
-            isReceive
-              ? 'bg-green-50'
-              : 'bg-red-50'
-          }`}
+          className="h-7 w-7 items-center justify-center rounded-full"
+          style={{
+            backgroundColor: isReceive
+              ? '#F0FDF4'
+              : '#FEF2F2',
+          }}
         >
           <Ionicons
             name={
@@ -50,30 +54,36 @@ export function MoneySummaryCard({
                 : 'arrow-up-outline'
             }
             size={16}
-            color={
-              isReceive
-                ? '#16A34A'
-                : '#DC2626'
-            }
+            color={accentColor}
           />
         </View>
 
         <AppText
-          className="min-w-0 flex-1 font-spline-medium text-[12px] text-muted"
           numberOfLines={1}
           adjustsFontSizeToFit
           minimumFontScale={0.85}
+          className="min-w-0 flex-1 font-spline-medium"
+          style={{
+            color: '#737373',
+            fontSize: 12,
+            lineHeight: 17,
+          }}
         >
           {label}
         </AppText>
       </View>
 
-      {/* Amount */}
       <AppText
-        className="font-spline-bold text-[20px] leading-[27px] text-foreground"
         numberOfLines={2}
         adjustsFontSizeToFit
         minimumFontScale={0.7}
+        className="font-spline-bold"
+        style={{
+          color: '#242422',
+          fontSize: 19,
+          lineHeight: 26,
+          fontVariant: ['tabular-nums'],
+        }}
       >
         {amountsVisible
           ? `Rs ${formatRupees(safeAmount)}`
