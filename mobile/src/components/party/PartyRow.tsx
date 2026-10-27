@@ -1,5 +1,5 @@
 
-import React, { memo, useMemo } from 'react';
+import React, { useMemo } from 'react';
 import {
   ActivityIndicator,
   Pressable,
@@ -43,7 +43,9 @@ export interface PartyRowProps {
   onDelete?: () => void;
 }
 
-function parseDate(value: DateValue | undefined): Date | null {
+function parseDate(
+  value: DateValue | undefined
+): Date | null {
   if (value == null || value === '') {
     return null;
   }
@@ -59,7 +61,9 @@ function parseDate(value: DateValue | undefined): Date | null {
           )
         : new Date(value);
 
-  return Number.isNaN(date.getTime()) ? null : date;
+  return Number.isNaN(date.getTime())
+    ? null
+    : date;
 }
 
 function formatLastActivity(
@@ -92,7 +96,7 @@ function formatLastActivity(
   return `${dateText} · ${timeText}`;
 }
 
-export const PartyRow = memo(function PartyRow({
+export function PartyRow({
   party,
   first = false,
   last = false,
@@ -298,4 +302,4 @@ export const PartyRow = memo(function PartyRow({
       </Pressable>
     </View>
   );
-});
+}
