@@ -1,6 +1,8 @@
 
 import React, {
   useCallback,
+  useEffect,
+  useMemo,
   useState,
 } from 'react';
 
@@ -23,7 +25,19 @@ export interface PartyListProps<
   'data' | 'renderItem' | 'keyExtractor'
 > {
   parties: T[];
+
   partyType?: PartyRowType;
+
+  /**
+   * Optional display limit.
+   *
+   * Home: maxItems={10}
+   * Customer/Supplier pages: omit this prop.
+   *
+   * For efficient loading, the repository should
+   * also limit the number of records fetched.
+   */
+  maxItems?: number;
 
   deletingPartyId?: string | null;
 
@@ -47,6 +61,7 @@ export function PartyList<
 >({
   parties,
   partyType,
+  maxItems,
   deletingPartyId = null,
   onOpenParty,
   onQuickTransaction,
@@ -56,10 +71,31 @@ export function PartyList<
   const [selectedPartyId, setSelectedPartyId] =
     useState<string | null>(null);
 
-  /*
-   * Long-press toggles selection.
-   * Selection exposes the delete button.
-   */
+  const visibleParties = useMemo(() => {
+    if (maxItems === undefined) {
+      return parties;
+    }
+
+    const limit = Number.isFinite(maxItems)
+      ? Math.max(0, Math.floor(maxItems))
+      : parties.length;
+
+    return parties.slice(0, limit);
+  }, [parties, maxItems]);
+
+  // Clear selection when the selected party
+  // disappears from the current page.
+  useEffect(() => {
+    if (
+      selectedPartyId !== null &&
+      !visibleParties.some(
+        (party) => party.id === selectedPartyId
+      )
+    ) {
+      setSelectedPartyId(null);
+    }
+  }, [selectedPartyId, visibleParties]);
+
   const handleSelectParty = useCallback(
     (partyId: string) => {
       setSelectedPartyId((current) =>
@@ -67,6 +103,22 @@ export function PartyList<
       );
     },
     []
+  );
+
+  const handleOpenParty = useCallback(
+    (id: string, type: PartyRowType) => {
+      setSelectedPartyId(null);
+      onOpenParty(id, type);
+    },
+    [onOpenParty]
+  );
+
+  const handleQuickTransaction = useCallback(
+    (id: string, type: PartyRowType) => {
+      setSelectedPartyId(null);
+      onQuickTransaction(id, type);
+    },
+    [onQuickTransaction]
   );
 
   const renderItem = useCallback<ListRenderItem<T>>(
@@ -80,22 +132,20 @@ export function PartyList<
             type,
           }}
           first={index === 0}
-          last={index === parties.length - 1}
+          last={index === visibleParties.length - 1}
           selected={selectedPartyId === item.id}
           isDeleting={deletingPartyId === item.id}
-          onOpenParty={() => {
-            onOpenParty(item.id, type);
-          }}
+          onOpenParty={() =>
+            handleOpenParty(item.id, type)
+          }
           onLongPressParty={
             onDeleteParty
-              ? () => {
-                  handleSelectParty(item.id);
-                }
+              ? () => handleSelectParty(item.id)
               : undefined
           }
-          onQuickTransaction={() => {
-            onQuickTransaction(item.id, type);
-          }}
+          onQuickTransaction={() =>
+            handleQuickTransaction(item.id, type)
+          }
           onDelete={
             onDeleteParty
               ? () => {
@@ -107,13 +157,13 @@ export function PartyList<
       );
     },
     [
-      parties.length,
       partyType,
+      visibleParties.length,
       selectedPartyId,
       deletingPartyId,
-      onOpenParty,
+      handleOpenParty,
       handleSelectParty,
-      onQuickTransaction,
+      handleQuickTransaction,
       onDeleteParty,
     ]
   );
@@ -121,11 +171,16 @@ export function PartyList<
   return (
     <FlatList
       {...flatListProps}
-      data={parties}
+      data={visibleParties}
       keyExtractor={(item) => item.id}
       renderItem={renderItem}
       keyboardShouldPersistTaps="handled"
       showsVerticalScrollIndicator={false}
+      initialNumToRender={10}
+      maxToRenderPerBatch={10}
+      windowSize={5}
+      removeClippedSubviews={false}
+      extraData={selectedPartyId}
     />
   );
 }

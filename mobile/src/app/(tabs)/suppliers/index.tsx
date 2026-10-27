@@ -1,8 +1,12 @@
 
-import React from 'react';
+import React, {
+  useCallback,
+  useRef,
+} from 'react';
 
 import {
   ActivityIndicator,
+  Pressable,
   View,
 } from 'react-native';
 
@@ -25,6 +29,8 @@ import { usePartyList } from '@/hooks/party/usePartyList';
 import { useDeleteParty } from '@/hooks/party/useDeleteParty';
 import { useShopIdentity } from '@/hooks/shop/useShopIdentity';
 
+const PAGE_SIZE = 25;
+
 export default function SuppliersScreen() {
   const {
     parties,
@@ -34,7 +40,14 @@ export default function SuppliersScreen() {
     error,
     handleSearch,
     refresh,
-  } = usePartyList('SUPPLIER');
+
+    // Pagination support from usePartyList.
+    hasMore,
+    loadingMore,
+    loadMore,
+  } = usePartyList('SUPPLIER', {
+    pageSize: PAGE_SIZE,
+  });
 
   const {
     shopId,
@@ -56,33 +69,76 @@ export default function SuppliersScreen() {
     onDeleted: refresh,
   });
 
-  function handleOpenSupplier(supplierId: string) {
-    router.push({
-      pathname: '/suppliers/[id]',
-      params: {
-        id: supplierId,
-        from: 'suppliers',
-      },
-    });
-  }
+  const endReachedRef = useRef(false);
 
-  function handleQuickSupply(supplierId: string) {
-    router.push({
-      pathname: '/suppliers/[id]/supply',
-      params: {
-        id: supplierId,
-        from: 'suppliers',
-      },
-    });
-  }
+  const handleOpenSupplier = useCallback(
+    (supplierId: string) => {
+      router.push({
+        pathname: '/suppliers/[id]',
+        params: {
+          id: supplierId,
+          from: 'suppliers',
+        },
+      });
+    },
+    []
+  );
 
-  function handleAddSupplier() {
+  const handleQuickSupply = useCallback(
+    (supplierId: string) => {
+      router.push({
+        pathname: '/suppliers/[id]/supply',
+        params: {
+          id: supplierId,
+          from: 'suppliers',
+        },
+      });
+    },
+    []
+  );
+
+  const handleAddSupplier = useCallback(() => {
     router.push('/suppliers/new');
-  }
+  }, []);
+
+  const handleRefresh = useCallback(() => {
+    endReachedRef.current = false;
+    void refresh();
+  }, [refresh]);
+
+  const handleLoadMore = useCallback(() => {
+    if (
+      !hasMore ||
+      loadingMore ||
+      loading ||
+      refreshing ||
+      endReachedRef.current
+    ) {
+      return;
+    }
+
+    endReachedRef.current = true;
+    void loadMore();
+  }, [
+    hasMore,
+    loadingMore,
+    loading,
+    refreshing,
+    loadMore,
+  ]);
+
+  const handleSearchChange = useCallback(
+    (value: string) => {
+      endReachedRef.current = false;
+      handleSearch(value);
+    },
+    [handleSearch]
+  );
 
   const isSearching = query.trim().length > 0;
+  const isInitialLoading = loading || identityLoading;
 
-  if (loading || identityLoading) {
+  if (isInitialLoading) {
     return (
       <Screen>
         <AppHeader title="Suppliers" />
@@ -104,7 +160,7 @@ export default function SuppliersScreen() {
       <View className="mb-4">
         <SearchField
           value={query}
-          onChangeText={handleSearch}
+          onChangeText={handleSearchChange}
           placeholder="Search suppliers"
         />
       </View>
@@ -122,15 +178,49 @@ export default function SuppliersScreen() {
 
       <PartyList
         partyType="SUPPLIER"
-        parties={parties}
+        parties={parties.map((party) => ({
+          ...party,
+          lastActivityAt:
+            party.last_activity_at ??
+            party.updated_at ??
+            party.created_at,
+        }))}
         deletingPartyId={deletingPartyId}
         onDeleteParty={confirmDeleteParty}
         refreshing={refreshing}
-        onRefresh={() => {
-          void refresh();
-        }}
+        onRefresh={handleRefresh}
         onOpenParty={handleOpenSupplier}
         onQuickTransaction={handleQuickSupply}
+        onEndReached={handleLoadMore}
+        onEndReachedThreshold={0.35}
+        onMomentumScrollBegin={() => {
+          endReachedRef.current = false;
+        }}
+        initialNumToRender={12}
+        maxToRenderPerBatch={12}
+        windowSize={7}
+        removeClippedSubviews={false}
+        keyboardShouldPersistTaps="handled"
+        contentContainerClassName={
+          parties.length === 0
+            ? 'flex-grow pb-4'
+            : 'pb-4'
+        }
+        ListHeaderComponent={
+          parties.length > 0 ? (
+            <View className="mb-3 flex-row items-center justify-between px-1">
+              <AppText className="font-spline-medium text-[12px] text-muted">
+                {isSearching
+                  ? 'Search results'
+                  : 'Recently active suppliers'}
+              </AppText>
+
+              <AppText className="text-[12px] text-muted">
+                {parties.length} loaded
+              </AppText>
+            </View>
+          ) : null
+        }
         ListEmptyComponent={
           <EmptyState
             icon={
@@ -149,6 +239,36 @@ export default function SuppliersScreen() {
                 : 'Add your first supplier to start recording supplies and payments.'
             }
           />
+        }
+        ListFooterComponent={
+          loadingMore ? (
+            <View className="items-center py-5">
+              <ActivityIndicator
+                size="small"
+                color="#242422"
+              />
+            </View>
+          ) : hasMore && parties.length > 0 ? (
+            <Pressable
+              onPress={() => {
+                endReachedRef.current = false;
+                void loadMore();
+              }}
+              accessibilityRole="button"
+              accessibilityLabel="Load more suppliers"
+              className="my-3 min-h-11 flex-row items-center justify-center gap-2 rounded-control border border-border bg-surface px-4"
+            >
+              <AppText className="font-spline-medium text-[13px] text-foreground">
+                Load more suppliers
+              </AppText>
+
+              <Ionicons
+                name="chevron-down"
+                size={15}
+                color="#777770"
+              />
+            </Pressable>
+          ) : null
         }
       />
 

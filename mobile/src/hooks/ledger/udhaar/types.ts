@@ -7,12 +7,20 @@ export type CustomerParty = NonNullable<
   Awaited<ReturnType<PartyRepository['getByIdAndShop']>>
 >;
 
+export type UdhaarEntryMode = 'amount' | 'quantity';
+
 export interface DraftUdhaarItem {
   id: string;
   itemId: string | null;
   name: string;
   source: 'selected' | 'editor';
+
+  // Exact whole-rupee transaction amount.
+  amount: string;
+
+  // May contain decimal quantities.
   quantity: string;
+
   unit: string;
   unitPrice: string;
 }

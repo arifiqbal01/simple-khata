@@ -9,7 +9,10 @@ import {
   QUICK_ITEMS_VISIBLE_LIMIT,
 } from '@/config/quick-items';
 
-import type { DraftUdhaarItem } from './types';
+import type {
+  DraftUdhaarItem,
+  UdhaarEntryMode,
+} from './types';
 
 export function normalizeName(name: string): string {
   return name.trim().toLocaleLowerCase();
@@ -17,7 +20,8 @@ export function normalizeName(name: string): string {
 
 export function catalogDefaults(item?: Item | null) {
   return {
-    quantity: '1',
+    amount: '',
+    quantity: '',
     unit: item?.default_unit ?? '',
     unitPrice:
       item?.default_selling_price == null
@@ -36,37 +40,137 @@ export function emptyItem(): DraftUdhaarItem {
   };
 }
 
-export function parseLine(
-  item: DraftUdhaarItem
+export function parseWholeRupees(
+  value: string
 ): number | null {
-  const quantityText = item.quantity.trim();
-  const priceText = item.unitPrice.trim();
+  const text = value.trim();
 
-  if (
-    !quantityText ||
-    !priceText ||
-    !item.unit.trim()
-  ) {
+  if (!/^\d+$/.test(text)) {
     return null;
   }
 
-  const quantity = Number(quantityText);
-  const unitPrice = Number(priceText);
+  const amount = Number(text);
 
-  if (
-    !Number.isSafeInteger(quantity) ||
-    quantity <= 0 ||
-    !Number.isSafeInteger(unitPrice) ||
-    unitPrice < 0
-  ) {
+  return Number.isSafeInteger(amount) && amount >= 0
+    ? amount
+    : null;
+}
+
+export function parseQuantity(
+  value: string
+): number | null {
+  const text = value.trim();
+
+  if (!/^(?:\d+(?:\.\d*)?|\.\d+)$/.test(text)) {
+    return null;
+  }
+
+  const quantity = Number(text);
+
+  return Number.isFinite(quantity) && quantity > 0
+    ? quantity
+    : null;
+}
+
+export function parseUnitPrice(
+  value: string
+): number | null {
+  return parseWholeRupees(value);
+}
+
+export function calculateAmount(
+  quantityText: string,
+  unitPriceText: string
+): number | null {
+  const quantity = parseQuantity(quantityText);
+  const unitPrice = parseUnitPrice(unitPriceText);
+
+  if (quantity === null || unitPrice === null) {
     return null;
   }
 
   const total = quantity * unitPrice;
 
-  return Number.isSafeInteger(total) ? total : null;
+  if (
+    !Number.isFinite(total) ||
+    total < 0 ||
+    total > Number.MAX_SAFE_INTEGER
+  ) {
+    return null;
+  }
+
+  // Round the line total once to whole rupees.
+  const rounded = Math.round(total);
+
+  return Number.isSafeInteger(rounded)
+    ? rounded
+    : null;
 }
 
+export function calculateQuantity(
+  amountText: string,
+  unitPriceText: string
+): number | null {
+  const amount = parseWholeRupees(amountText);
+  const unitPrice = parseUnitPrice(unitPriceText);
+
+  if (
+    amount === null ||
+    unitPrice === null ||
+    unitPrice <= 0
+  ) {
+    return null;
+  }
+
+  const quantity = amount / unitPrice;
+
+  return Number.isFinite(quantity) && quantity > 0
+    ? quantity
+    : null;
+}
+
+export function formatCalculatedQuantity(
+  quantity: number,
+  decimalPlaces = 6
+): string {
+  if (!Number.isFinite(quantity) || quantity <= 0) {
+    return '';
+  }
+
+  return quantity
+    .toFixed(decimalPlaces)
+    .replace(/\.?0+$/, '');
+}
+
+export function parseLine(
+  item: DraftUdhaarItem,
+  mode: UdhaarEntryMode = 'quantity'
+): number | null {
+  if (!item.name.trim()) {
+    return null;
+  }
+
+  if (mode === 'amount') {
+    const amount = parseWholeRupees(item.amount);
+
+    return amount !== null && amount > 0
+      ? amount
+      : null;
+  }
+
+  if (!item.unit.trim()) {
+    return null;
+  }
+
+  const total = calculateAmount(
+    item.quantity,
+    item.unitPrice
+  );
+
+  return total !== null && total > 0
+    ? total
+    : null;
+}
 
 export function getStarterQuickItems(
   catalog: Item[]
@@ -76,22 +180,19 @@ export function getStarterQuickItems(
     .map((name, index) => {
       const existing = catalog.find(
         (item) =>
-          normalizeName(item.name) ===
-          normalizeName(name)
+          normalizeName(item.name) === normalizeName(name)
       );
 
       return {
         id: existing?.id ?? null,
         name: existing?.name ?? name,
         score: DEFAULT_QUICK_ITEMS.length - index,
-        defaultUnit:
-          existing?.default_unit ?? null,
+        defaultUnit: existing?.default_unit ?? null,
         defaultSellingPrice:
           existing?.default_selling_price ?? null,
       };
     });
 }
-
 
 export function findCatalogItem(
   catalog: Item[],

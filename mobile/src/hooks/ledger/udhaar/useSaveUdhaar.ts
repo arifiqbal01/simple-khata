@@ -23,12 +23,16 @@ import {
 import type {
   DraftUdhaarItem,
   UdhaarCustomerState,
+  UdhaarEntryMode,
   UdhaarTotalsState,
 } from './types';
 
 import {
   normalizeName,
   parseLine,
+  parseQuantity,
+  parseUnitPrice,
+  parseWholeRupees,
 } from './utils';
 
 const itemRepository = new ItemRepository();
@@ -55,6 +59,7 @@ interface UseSaveUdhaarInput {
   availableItems: Item[];
   items: DraftUdhaarItem[];
   totals: UdhaarTotalsState;
+  mode: UdhaarEntryMode;
 }
 
 export function useSaveUdhaar({
@@ -63,6 +68,7 @@ export function useSaveUdhaar({
   availableItems,
   items,
   totals,
+  mode,
 }: UseSaveUdhaarInput) {
   const [saving, setSaving] = useState(false);
   const savingRef = useRef(false);
@@ -104,7 +110,9 @@ export function useSaveUdhaar({
       ) {
         throw new Error(
           hasSelectedItems
-            ? 'Enter a valid quantity, unit and price for every selected item'
+            ? mode === 'amount'
+              ? 'Enter a valid whole-rupee amount for every selected item'
+              : 'Enter a valid quantity, unit and price for every selected item'
             : 'Enter a valid whole rupee amount'
         );
       }
@@ -129,10 +137,6 @@ export function useSaveUdhaar({
         const preparedItems: CreateUdhaarItemInput[] = [];
         const seenNames = new Set<string>();
 
-        /*
-         * Cache catalog products already loaded
-         * by the screen.
-         */
         const knownById = new Map<string, Item>();
         const knownByName = new Map<string, Item>();
 
@@ -151,10 +155,6 @@ export function useSaveUdhaar({
           );
         }
 
-        /*
-         * Validate selected items and calculate
-         * transaction values.
-         */
         for (const draft of items) {
           if (draft.source !== 'selected') {
             continue;
@@ -178,29 +178,84 @@ export function useSaveUdhaar({
 
           seenNames.add(normalized);
 
-          const lineTotal = parseLine(draft);
+          const lineTotal = parseLine(draft, mode);
 
           if (lineTotal === null) {
             throw new Error(
-              `Enter valid quantity, unit and price for ${name}`
+              mode === 'amount'
+                ? `Enter a valid rupee amount for ${name}`
+                : `Enter valid quantity, unit and price for ${name}`
             );
           }
 
-          const quantity = Number(
-            draft.quantity.trim()
-          );
+          const unit = draft.unit.trim() || null;
 
-          const unit = draft.unit.trim();
+          const priceText = draft.unitPrice.trim();
 
-          const unitPrice = Number(
-            draft.unitPrice.trim()
-          );
+          const unitPrice =
+            priceText.length === 0
+              ? null
+              : parseUnitPrice(priceText);
 
-          /*
-           * Find existing catalog product by ID,
-           * then by name, including SQLite lookups
-           * outside the initial catalog page.
-           */
+          if (
+            priceText.length > 0 &&
+            unitPrice === null
+          ) {
+            throw new Error(
+              `Enter a valid selling price for ${name}`
+            );
+          }
+
+          let quantity: number | null = null;
+
+          if (mode === 'quantity') {
+            quantity = parseQuantity(
+              draft.quantity
+            );
+
+            if (
+              quantity === null ||
+              unit === null ||
+              unitPrice === null
+            ) {
+              throw new Error(
+                `Enter valid quantity, unit and price for ${name}`
+              );
+            }
+          } else {
+            const amount = parseWholeRupees(
+              draft.amount
+            );
+
+            if (
+              amount === null ||
+              amount <= 0
+            ) {
+              throw new Error(
+                `Enter a valid rupee amount for ${name}`
+              );
+            }
+
+            // Derived quantities are approximate.
+            // Save them only when a valid unit and
+            // selling price are available.
+            if (
+              unit !== null &&
+              unitPrice !== null &&
+              unitPrice > 0
+            ) {
+              const parsedQuantity = parseQuantity(
+                draft.quantity
+              );
+
+              quantity = parsedQuantity;
+            }
+          }
+
+          // Preserve missing values as null.
+          // Do not manufacture a zero price or
+          // quantity for amount-only items.
+
           let catalogItem: Item | null = null;
 
           if (draft.itemId) {
@@ -222,12 +277,6 @@ export function useSaveUdhaar({
           }
 
           if (!catalogItem) {
-            /*
-             * NEW PRODUCT
-             *
-             * Save the selected unit and price as
-             * permanent catalog defaults.
-             */
             catalogItem =
               await createItemService.execute({
                 shopId,
@@ -237,44 +286,40 @@ export function useSaveUdhaar({
                 defaultSellingPrice: unitPrice,
               });
           } else {
-            /*
-             * EXISTING PRODUCT
-             *
-             * Fill missing catalog defaults only.
-             * Never overwrite an existing unit
-             * or existing selling price.
-             */
             const missingUnit =
               !catalogItem.default_unit?.trim();
 
             const missingPrice =
               catalogItem.default_selling_price == null;
 
-            if (missingUnit || missingPrice) {
-              const updatedUnit = missingUnit
-                  ? unit
-                  : catalogItem.default_unit ?? null;
+            const shouldUpdateUnit =
+              missingUnit && unit !== null;
 
-                const updatedPrice = missingPrice
-                  ? unitPrice
-                  : catalogItem.default_selling_price ?? null;
+            const shouldUpdatePrice =
+              missingPrice && unitPrice !== null;
 
+            if (
+              shouldUpdateUnit ||
+              shouldUpdatePrice
+            ) {
               catalogItem =
                 await updateItemService.execute({
                   shopId,
                   deviceId,
                   itemId: catalogItem.id,
                   name: catalogItem.name,
-                  defaultUnit: updatedUnit,
-                  defaultSellingPrice: updatedPrice,
+                  defaultUnit:
+                    shouldUpdateUnit
+                      ? unit
+                      : catalogItem.default_unit ?? null,
+                  defaultSellingPrice:
+                    shouldUpdatePrice
+                      ? unitPrice
+                      : catalogItem.default_selling_price ?? null,
                 });
             }
           }
 
-          /*
-           * Refresh the local cache with the
-           * newly created or updated catalog item.
-           */
           knownById.set(
             catalogItem.id,
             catalogItem
@@ -285,24 +330,16 @@ export function useSaveUdhaar({
             catalogItem
           );
 
-          /*
-           * Transaction values remain separate
-           * from catalog defaults.
-           */
           preparedItems.push({
             itemId: catalogItem.id,
             name: catalogItem.name,
+            amount: lineTotal,
             quantity,
             unit,
             unitPrice,
-            amount: lineTotal,
           });
         }
 
-        /*
-         * Verify the itemized total before
-         * creating the ledger entry.
-         */
         if (hasSelectedItems) {
           if (preparedItems.length === 0) {
             throw new Error(
@@ -327,9 +364,6 @@ export function useSaveUdhaar({
           }
         }
 
-        /*
-         * Save the Udhaar ledger transaction.
-         */
         await createUdhaarService.execute({
           shopId,
           partyId: customerId,
@@ -354,6 +388,7 @@ export function useSaveUdhaar({
       hasSelectedItems,
       items,
       availableItems,
+      mode,
     ]
   );
 

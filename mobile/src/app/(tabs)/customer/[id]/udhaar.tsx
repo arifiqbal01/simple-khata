@@ -1,4 +1,3 @@
-
 import React, {
   useCallback,
   useEffect,
@@ -27,16 +26,20 @@ import Toast from 'react-native-toast-message';
 
 import {
   AppText,
-  MoneyInput,
   Screen,
   SaveButton,
 } from '@/components/ui';
 
-import { QuickItems } from '@/components/ledger/udhaar/QuickItems';
-import { SelectedItems } from '@/components/ledger/udhaar/SelectedItems';
-import { ItemSearchFields } from '@/components/ledger/udhaar/ItemSearchFields';
+import {
+  ItemSearchSheet,
+  NewItemSheet,
+  SelectedItems,
+  type NewUdhaarItemDetails,
+} from '@/components/ledger/udhaar';
 
 import { useAddUdhaar } from '@/hooks/ledger/useAddUdhaar';
+
+import type { Item } from '@/types/domain';
 
 function firstParam(
   value: string | string[] | undefined
@@ -58,14 +61,13 @@ export default function AddUdhaarScreen() {
   const {
     customer,
     balance,
+    shopId,
 
-    amount,
-    setAmount,
-
-    availableItems,
     quickItems,
     selectedItems,
-    draftItems,
+
+    mode,
+    setMode,
 
     loading,
     saving,
@@ -75,16 +77,13 @@ export default function AddUdhaarScreen() {
     itemizedTotal,
     hasSelectedItems,
 
-    addItemRow,
+    addCatalogItem,
+    addNewItem,
     removeItem,
-    clearItems,
-    changeItemName,
+    changeItemAmount,
     changeItemQuantity,
     changeItemUnit,
     changeItemUnitPrice,
-    selectItem,
-    toggleQuickItem,
-    confirmItem,
     save,
   } = useAddUdhaar(customerId);
 
@@ -92,6 +91,18 @@ export default function AddUdhaarScreen() {
   const savingRef = useRef(false);
 
   const [keyboardVisible, setKeyboardVisible] =
+    useState(false);
+
+  const [itemSearchVisible, setItemSearchVisible] =
+    useState(false);
+
+  const [newItemVisible, setNewItemVisible] =
+    useState(false);
+
+  const [newItemName, setNewItemName] =
+    useState('');
+
+  const [openNewItemAfterDismiss, setOpenNewItemAfterDismiss] =
     useState(false);
 
   useEffect(() => {
@@ -121,11 +132,6 @@ export default function AddUdhaarScreen() {
     [selectedItems]
   );
 
-  const selectedNames = useMemo(
-    () => selectedItems.map((item) => item.name),
-    [selectedItems]
-  );
-
   const handleClose = useCallback(() => {
     Keyboard.dismiss();
     router.replace('/');
@@ -133,6 +139,7 @@ export default function AddUdhaarScreen() {
 
   const handleSave = useCallback(async () => {
     if (
+      !hasSelectedItems ||
       !validAmount ||
       saving ||
       savingRef.current
@@ -167,6 +174,7 @@ export default function AddUdhaarScreen() {
       savingRef.current = false;
     }
   }, [
+    hasSelectedItems,
     validAmount,
     saving,
     save,
@@ -181,10 +189,64 @@ export default function AddUdhaarScreen() {
     });
   }, []);
 
-  const handleAddItem = useCallback(() => {
-    addItemRow();
-    scrollToItems();
-  }, [addItemRow, scrollToItems]);
+  const handleOpenSearch = useCallback(() => {
+    if (saving) {
+      return;
+    }
+
+    Keyboard.dismiss();
+    setItemSearchVisible(true);
+  }, [saving]);
+
+  const handleSelectCatalogItem = useCallback(
+    (item: Item) => {
+      addCatalogItem(item);
+      setItemSearchVisible(false);
+      scrollToItems();
+    },
+    [addCatalogItem, scrollToItems]
+  );
+
+  const handleOpenNewItemSheet = useCallback(
+    (name: string) => {
+      setNewItemName(name);
+      setOpenNewItemAfterDismiss(true);
+      setItemSearchVisible(false);
+    },
+    []
+  );
+
+  /*
+   * Avoid displaying two native modals
+   * simultaneously. Open the new-item sheet
+   * after the search modal has closed.
+   */
+  useEffect(() => {
+    if (
+      !itemSearchVisible &&
+      openNewItemAfterDismiss
+    ) {
+      const timeout = setTimeout(() => {
+        setNewItemVisible(true);
+        setOpenNewItemAfterDismiss(false);
+      }, 350);
+
+      return () => clearTimeout(timeout);
+    }
+  }, [
+    itemSearchVisible,
+    openNewItemAfterDismiss,
+  ]);
+
+  const handleAddNewItem = useCallback(
+    (details: NewUdhaarItemDetails) => {
+      addNewItem(details);
+      setNewItemVisible(false);
+      setNewItemName('');
+      scrollToItems();
+    },
+    [addNewItem, scrollToItems]
+  );
 
   if (loading) {
     return (
@@ -217,15 +279,17 @@ export default function AddUdhaarScreen() {
             />
           </Pressable>
 
-          <AppText className="ml-4 font-spline-semibold text-[18px] text-foreground">
+          <AppText
+            variant="heading"
+            className="ml-4"
+          >
             Add Udhaar
           </AppText>
         </View>
 
         <View className="flex-1 items-center justify-center px-5">
           <AppText className="text-center text-udhaar">
-            {error ??
-              'Customer could not be loaded.'}
+            {error ?? 'Customer could not be loaded.'}
           </AppText>
         </View>
       </Screen>
@@ -252,14 +316,14 @@ export default function AddUdhaarScreen() {
             />
           </Pressable>
 
-          <AppText className="font-spline-semibold text-[19px] text-foreground">
+          <AppText variant="heading">
             Add Udhaar
           </AppText>
         </View>
 
         <SaveButton
           loading={saving}
-          disabled={!validAmount || saving}
+          disabled={!hasSelectedItems || !validAmount || saving}
           accessibilityLabel="Save Udhaar"
           onPress={() => {
             void handleSave();
@@ -295,126 +359,121 @@ export default function AddUdhaarScreen() {
           <View className="flex-row items-center justify-between gap-3 border-b border-border px-5 py-4">
             <View className="min-w-0 flex-1">
               <AppText
+                variant="heading"
                 numberOfLines={2}
-                className="font-spline-semibold text-[20px] text-foreground"
               >
                 {customer.name}
               </AppText>
             </View>
 
             <View className="items-end">
-              <AppText className="font-spline-semibold text-[18px] text-foreground">
+              <AppText variant="bodyMedium">
                 {formatMoney(balance)}
               </AppText>
 
-              <AppText className="mt-1 text-[12px] text-muted">
+              <AppText
+                variant="caption"
+                className="mt-1"
+              >
                 Current balance
               </AppText>
             </View>
           </View>
 
           <View className="px-5">
-            {/* Compact amount */}
-            <View className="pt-5">
-              {hasSelectedItems ? (
-                <View className="flex-row items-center justify-between border-b border-border py-3">
-                  <AppText className="font-spline-medium text-[15px] text-muted">
-                    Calculated Udhaar
-                  </AppText>
-
-                  <AppText className="font-spline-semibold text-[21px] text-foreground">
-                    {formatMoney(itemizedTotal)}
-                  </AppText>
-                </View>
-              ) : (
-                <MoneyInput
-                  label="Amount"
-                  value={amount}
-                  onChangeText={setAmount}
-                />
-              )}
-            </View>
-
-            {/* Selected items */}
-            <View className="mt-6">
-              <View className="flex-row items-center justify-between">
-                <AppText className="font-spline-semibold text-[16px] text-foreground">
-                  Items
+            {/* Show the read-only total only when items are selected. */}
+            {hasSelectedItems ? (
+              <View className="flex-row items-center justify-between border-b border-border py-3">
+                <AppText variant="bodyMedium">
+                  Total Udhaar
                 </AppText>
 
-                {selectedItems.length > 0 ? (
-                  <Pressable
-                    onPress={clearItems}
-                    disabled={saving}
-                    hitSlop={8}
-                    accessibilityRole="button"
-                    accessibilityLabel="Clear all items"
-                  >
-                    <AppText className="font-spline-medium text-[12px] text-udhaar">
-                      Clear all
-                    </AppText>
-                  </Pressable>
-                ) : null}
+                <AppText variant="money">
+                  {formatMoney(itemizedTotal)}
+                </AppText>
               </View>
+            ) : null}
 
-              <SelectedItems
-                items={selectedItems}
-                onRemove={removeItem}
-                onChangeQuantity={
-                  changeItemQuantity
-                }
-                onChangeUnit={changeItemUnit}
-                onChangeUnitPrice={
-                  changeItemUnitPrice
-                }
+            {/* Add item action */}
+            <Pressable
+              onPress={handleOpenSearch}
+              disabled={saving}
+              accessibilityRole="button"
+              accessibilityLabel="Add item"
+              className={`${hasSelectedItems ? 'mt-5' : 'mt-4'} flex-row items-center justify-center gap-2 rounded-control border border-border bg-surface px-4 py-4 active:opacity-70`}
+            >
+              <Ionicons
+                name="add-circle-outline"
+                size={22}
+                color="#181816"
               />
-            </View>
 
-            {/* Quick Items */}
-            <QuickItems
-              items={quickItems}
-              selectedNames={selectedNames}
-              onToggle={toggleQuickItem}
-            />
+              <AppText variant="bodyMedium">
+                Add Item
+              </AppText>
+            </Pressable>
 
-            {/* Search / Add item */}
-            <ItemSearchFields
-              drafts={draftItems}
-              availableItems={availableItems}
-              selectedItemIds={selectedItemIds}
-              onChangeName={changeItemName}
-              onSelectItem={selectItem}
-              onConfirm={confirmItem}
+            {/* Selected item rows */}
+            <SelectedItems
+              items={selectedItems}
+              mode={mode}
+              onChangeMode={setMode}
               onRemove={removeItem}
-              onAdd={handleAddItem}
-              onFocusField={scrollToItems}
+              onChangeAmount={changeItemAmount}
+              onChangeQuantity={changeItemQuantity}
+              onChangeUnit={changeItemUnit}
+              onChangeUnitPrice={changeItemUnitPrice}
+              disabled={saving}
             />
 
-            {/* Minimal balance summary */}
-            {validAmount ? (
+            {/* Balance summary */}
+            {hasSelectedItems && validAmount && (
               <View className="mt-6 flex-row items-center justify-between border-t border-border py-4">
-                <AppText className="text-[13px] text-muted">
+                <AppText variant="small">
                   Balance after Udhaar
                 </AppText>
 
-                <AppText className="font-spline-semibold text-[16px] text-foreground">
-                  {formatMoney(
-                    balance + parsedAmount
-                  )}
+                <AppText variant="bodyMedium">
+                  {formatMoney(balance + parsedAmount)}
                 </AppText>
               </View>
-            ) : null}
+            )}
 
-            {hasSelectedItems &&
-            !validAmount ? (
-              <AppText className="mt-4 text-[12px] text-udhaar">
-                Enter a valid quantity, unit and
-                selling price for every selected item.
+            {hasSelectedItems && !validAmount && (
+              <AppText
+                variant="caption"
+                className="mt-4 text-udhaar"
+              >
+                {mode === 'amount'
+                  ? 'Enter a valid rupee amount for every selected item.'
+                  : 'Enter a valid quantity, unit and selling price for every selected item.'}
               </AppText>
-            ) : null}
+            )}
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
+
+      {/* Search existing catalog items */}
+      <ItemSearchSheet
+        visible={itemSearchVisible}
+        shopId={shopId}
+        quickItems={quickItems}
+        selectedItemIds={selectedItemIds}
+        onClose={() => setItemSearchVisible(false)}
+        onSelectItem={handleSelectCatalogItem}
+        onCreateNew={handleOpenNewItemSheet}
+      />
+
+      {/* Create a new item */}
+      <NewItemSheet
+        visible={newItemVisible}
+        initialName={newItemName}
+        onClose={() => {
+          setNewItemVisible(false);
+          setNewItemName('');
+        }}
+        onAdd={handleAddNewItem}
+      />
     </Screen>
   );
 }

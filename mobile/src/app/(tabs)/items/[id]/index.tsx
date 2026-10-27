@@ -11,11 +11,12 @@ import {
 } from 'react-native';
 
 import { Ionicons } from '@expo/vector-icons';
-
 import {
   router,
   useLocalSearchParams,
 } from 'expo-router';
+
+import { SafeAreaView } from 'react-native-safe-area-context';
 
 import {
   AppText,
@@ -102,11 +103,6 @@ export default function EditItemScreen() {
     save,
   ]);
 
-  /*
-   * Open the shared confirmation modal.
-   * Do not use Alert.alert() or
-   * confirmItemDeletion().
-   */
   const handleDelete = useCallback(() => {
     if (
       identityLoading ||
@@ -133,63 +129,56 @@ export default function EditItemScreen() {
     }
   }, [deleting]);
 
-  /*
-   * Execute the actual deletion only after
-   * the user confirms.
-   */
-  const handleConfirmDelete =
-    useCallback(async () => {
-      if (
-        identityLoading ||
-        !shopId ||
-        !deviceId ||
-        !item ||
-        busy
-      ) {
-        return;
-      }
+  const handleConfirmDelete = useCallback(async () => {
+    if (
+      identityLoading ||
+      !shopId ||
+      !deviceId ||
+      !item ||
+      busy
+    ) {
+      return;
+    }
 
-      const deleted = await deleteItem();
+    const deleted = await deleteItem();
 
-      if (deleted) {
-        setShowDeleteConfirmation(false);
-        router.back();
-      }
+    setShowDeleteConfirmation(false);
 
-      /*
-       * If deletion fails, close the modal
-       * so the formError from useItemForm
-       * is visible on the edit screen.
-       */
-      if (!deleted) {
-        setShowDeleteConfirmation(false);
-      }
-    }, [
-      identityLoading,
-      shopId,
-      deviceId,
-      item,
-      busy,
-      deleteItem,
-    ]);
+    if (deleted) {
+      router.back();
+    }
+  }, [
+    identityLoading,
+    shopId,
+    deviceId,
+    item,
+    busy,
+    deleteItem,
+  ]);
 
   if (
     identityLoading ||
     (shopId && itemLoading)
   ) {
     return (
-      <View className="flex-1 items-center justify-center bg-background">
+      <SafeAreaView
+        edges={['top']}
+        className="flex-1 items-center justify-center bg-background"
+      >
         <ActivityIndicator
           size="small"
           color="#242422"
         />
-      </View>
+      </SafeAreaView>
     );
   }
 
   if (!shopId || !deviceId) {
     return (
-      <View className="flex-1 items-center justify-center bg-background px-5">
+      <SafeAreaView
+        edges={['top']}
+        className="flex-1 items-center justify-center bg-background px-5"
+      >
         <Ionicons
           name="storefront-outline"
           size={38}
@@ -216,13 +205,16 @@ export default function EditItemScreen() {
             Try Again
           </AppText>
         </Pressable>
-      </View>
+      </SafeAreaView>
     );
   }
 
   if (!item) {
     return (
-      <View className="flex-1 items-center justify-center bg-background px-5">
+      <SafeAreaView
+        edges={['top']}
+        className="flex-1 items-center justify-center bg-background px-5"
+      >
         <Ionicons
           name="cube-outline"
           size={38}
@@ -251,12 +243,15 @@ export default function EditItemScreen() {
             onPress={() => router.back()}
           />
         </View>
-      </View>
+      </SafeAreaView>
     );
   }
 
   return (
-    <View className="flex-1 bg-background">
+    <SafeAreaView
+      edges={['top']}
+      className="flex-1 bg-background"
+    >
       <ItemForm
         values={values}
         onChange={onChange}
@@ -283,6 +278,6 @@ export default function EditItemScreen() {
         }}
         onCancel={handleCancelDelete}
       />
-    </View>
+    </SafeAreaView>
   );
 }

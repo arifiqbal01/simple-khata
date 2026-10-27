@@ -1,6 +1,7 @@
 
 import { getDatabase } from '@/db/database';
 import type { SQLiteDatabase } from 'expo-sqlite';
+
 import type {
   LedgerEntry,
   LedgerEntryType,
@@ -26,9 +27,16 @@ export interface CreateUdhaarItemValues {
   id: string;
   itemId: string | null;
   name: string;
+
+  // Exact whole-rupee transaction amount.
   amount?: number | null;
+
+  // Positive decimal quantity.
   quantity?: number | null;
+
   unit?: string | null;
+
+  // Whole rupees per unit.
   unitPrice?: number | null;
 }
 
@@ -73,16 +81,20 @@ export class LedgerRepository {
     db: SQLiteDatabase,
     values: CreateLedgerEntryValues
   ): Promise<void> {
-    if (!Number.isSafeInteger(values.amount) ||
-        values.amount <= 0) {
+    if (
+      !Number.isSafeInteger(values.amount) ||
+      values.amount <= 0
+    ) {
       throw new Error(
         'Ledger amount must be a positive integer'
       );
     }
 
-    if (!['UDHAAR', 'SUPPLY', 'PAYMENT'].includes(
-      values.type
-    )) {
+    if (
+      !['UDHAAR', 'SUPPLY', 'PAYMENT'].includes(
+        values.type
+      )
+    ) {
       throw new Error('Invalid ledger entry type');
     }
 
@@ -151,7 +163,9 @@ export class LedgerRepository {
       );
     });
 
-    const entry = await this.getById(values.entry.id);
+    const entry = await this.getById(
+      values.entry.id
+    );
 
     if (!entry) {
       throw new Error(
@@ -163,98 +177,178 @@ export class LedgerRepository {
   }
 
   async createUdhaarWithItemsWithDatabase(
-  db: SQLiteDatabase,
-  values: CreateUdhaarWithItemsValues
-): Promise<void> {
-  if (values.entry.type !== 'UDHAAR') {
-    throw new Error(
-      'This method only accepts UDHAAR entries'
-    );
-  }
-
-  await this.createWithDatabase(db, values.entry);
-
-  for (const item of values.items) {
-    const name = item.name.trim();
-
-    if (!name) {
-      throw new Error('Entry item name is required');
+    db: SQLiteDatabase,
+    values: CreateUdhaarWithItemsValues
+  ): Promise<void> {
+    if (values.entry.type !== 'UDHAAR') {
+      throw new Error(
+        'This method only accepts UDHAAR entries'
+      );
     }
 
-    const quantity = item.quantity ?? null;
-    const unit = item.unit?.trim() || null;
-    const unitPrice = item.unitPrice ?? null;
-    const amount = item.amount ?? null;
+    await this.createWithDatabase(
+      db,
+      values.entry
+    );
 
-    const hasDetails =
-      quantity !== null ||
-      unit !== null ||
-      unitPrice !== null ||
-      amount !== null;
+    for (const item of values.items) {
+      const name = item.name.trim();
 
-    if (hasDetails) {
-      if (
-        quantity === null ||
-        !Number.isSafeInteger(quantity) ||
-        quantity <= 0
-      ) {
+      if (!name) {
         throw new Error(
-          `Enter a valid quantity for ${name}`
+          'Entry item name is required'
         );
       }
 
-      if (!unit) {
+      if (name.length > 150) {
+        throw new Error(
+          'Entry item name cannot exceed 150 characters'
+        );
+      }
+
+      const itemId =
+        item.itemId?.trim() || null;
+
+      const quantity =
+        item.quantity ?? null;
+
+      const unit =
+        item.unit?.trim() || null;
+
+      const unitPrice =
+        item.unitPrice ?? null;
+
+      const amount =
+        item.amount ?? null;
+
+      /*
+       * Allow decimal quantities.
+       * Missing quantity remains null.
+       */
+      if (
+        quantity !== null &&
+        (
+          !Number.isFinite(quantity) ||
+          quantity <= 0
+        )
+      ) {
+        throw new Error(
+          `Enter a valid positive quantity for ${name}`
+        );
+      }
+
+      /*
+       * A recorded quantity requires a unit.
+       */
+      if (
+        quantity !== null &&
+        unit === null
+      ) {
         throw new Error(
           `Select a unit for ${name}`
         );
       }
 
       if (
-        unitPrice === null ||
-        !Number.isSafeInteger(unitPrice) ||
-        unitPrice < 0
+        unit !== null &&
+        unit.length > 30
+      ) {
+        throw new Error(
+          `Unit for ${name} cannot exceed 30 characters`
+        );
+      }
+
+      /*
+       * Unit prices remain whole rupees.
+       * Null is allowed when price is unknown.
+       */
+      if (
+        unitPrice !== null &&
+        (
+          !Number.isSafeInteger(unitPrice) ||
+          unitPrice < 0
+        )
       ) {
         throw new Error(
           `Enter a valid selling price for ${name}`
         );
       }
 
+      /*
+       * Item amounts remain whole rupees.
+       * Null preserves legacy name-only items.
+       *
+       * Do not enforce:
+       * amount === quantity * unitPrice
+       *
+       * Amount-first entries may contain
+       * approximate calculated quantities.
+       */
       if (
-        amount === null ||
-        !Number.isSafeInteger(amount) ||
-        amount !== quantity * unitPrice
+        amount !== null &&
+        (
+          !Number.isSafeInteger(amount) ||
+          amount <= 0
+        )
       ) {
         throw new Error(
-          `Invalid total amount for ${name}`
+          `Enter a valid whole-rupee amount for ${name}`
         );
       }
-    }
 
-    await db.runAsync(
-      `
-        INSERT INTO entry_items (
-          id,
-          ledger_entry_id,
-          item_id,
-          name,
-          amount,
-          quantity,
-          unit,
-          unit_price
-        )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-      `,
-      item.id,
-      values.entry.id,
-      item.itemId,
-      name,
-      amount,
-      quantity,
-      unit,
-      unitPrice
-    );
+      /*
+       * Partial details without an amount are
+       * not accepted. Legacy name-only rows
+       * remain supported.
+       */
+      const hasDetails =
+        quantity !== null ||
+        unit !== null ||
+        unitPrice !== null;
+
+      if (
+        amount === null &&
+        hasDetails
+      ) {
+        throw new Error(
+          `Enter an amount for ${name}`
+        );
+      }
+
+      /*
+       * SQLite schema v6 defines quantity TEXT.
+       * Explicitly serialize decimal quantities.
+       */
+      const storedQuantity =
+        quantity === null
+          ? null
+          : String(quantity);
+
+      await db.runAsync(
+        `
+          INSERT INTO entry_items (
+            id,
+            ledger_entry_id,
+            item_id,
+            name,
+            amount,
+            quantity,
+            unit,
+            unit_price
+          )
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        `,
+        item.id,
+        values.entry.id,
+        itemId,
+        name,
+        amount,
+        storedQuantity,
+        unit,
+        unitPrice
+      );
+    }
   }
-}
 
   async getById(
     entryId: string

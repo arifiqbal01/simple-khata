@@ -11,6 +11,5 @@ export const ITEM_UNITS = [
   { label: 'Can', value: 'can' },
   { label: 'Dozen', value: 'dozen' },
   { label: 'Bundle', value: 'bundle' },
-  { label: 'Roll', value: 'roll' },
   { label: 'Meter (m)', value: 'meter' },
 ] as const;

@@ -24,16 +24,18 @@ import { InitializeAppService } from '@/services/bootstrap/initialize';
 
 export type HomePartyType = 'CUSTOMER' | 'SUPPLIER';
 
-type PartyBalanceSummary = Awaited<
-  ReturnType<PartyRepository['getBalanceSummary']>
+type PartyBalancePage = Awaited<
+  ReturnType<PartyRepository['getBalancePage']>
 >;
 
-type BalanceParty =
-  PartyBalanceSummary['parties'][number];
+type BalanceParty = PartyBalancePage['parties'][number];
 
 export type HomeParty = BalanceParty & {
   type: HomePartyType;
 };
+
+const HOME_RECENT_LIMIT = 10;
+const SEARCH_DELAY_MS = 250;
 
 const partyRepository = new PartyRepository();
 
@@ -51,22 +53,18 @@ function calculateShopBalances(
   let toPay = 0;
 
   for (const party of customers) {
-    const balance = party.balance;
-
-    if (balance > 0) {
-      toReceive += balance;
-    } else if (balance < 0) {
-      toPay += Math.abs(balance);
+    if (party.balance > 0) {
+      toReceive += party.balance;
+    } else if (party.balance < 0) {
+      toPay += Math.abs(party.balance);
     }
   }
 
   for (const party of suppliers) {
-    const balance = party.balance;
-
-    if (balance > 0) {
-      toPay += balance;
-    } else if (balance < 0) {
-      toReceive += Math.abs(balance);
+    if (party.balance > 0) {
+      toPay += party.balance;
+    } else if (party.balance < 0) {
+      toReceive += Math.abs(party.balance);
     }
   }
 
@@ -75,6 +73,50 @@ function calculateShopBalances(
     toPay,
     netBalance: toReceive - toPay,
   };
+}
+
+function activityTimestamp(
+  party: HomeParty
+): string {
+  return (
+    party.last_activity_at ??
+    party.created_at ??
+    ''
+  );
+}
+
+function sortByRecentActivity(
+  parties: HomeParty[]
+): HomeParty[] {
+  return parties.sort((a, b) => {
+    const aActivity = activityTimestamp(a);
+    const bActivity = activityTimestamp(b);
+
+    const activityComparison =
+      bActivity.localeCompare(aActivity);
+
+    if (activityComparison !== 0) {
+      return activityComparison;
+    }
+
+    return b.id.localeCompare(a.id);
+  });
+}
+
+function combineParties(
+  customers: BalanceParty[],
+  suppliers: BalanceParty[]
+): HomeParty[] {
+  return sortByRecentActivity([
+    ...customers.map((party) => ({
+      ...party,
+      type: 'CUSTOMER' as const,
+    })),
+    ...suppliers.map((party) => ({
+      ...party,
+      type: 'SUPPLIER' as const,
+    })),
+  ]);
 }
 
 export function useHomeData() {
@@ -91,17 +133,27 @@ export function useHomeData() {
   const [toPay, setToPay] = useState(0);
   const [netBalance, setNetBalance] = useState(0);
 
-  const [query, setQuery] = useState('');
+  const [query, setQueryState] = useState('');
+
   const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
+  const [refreshing, setRefreshing] =
+    useState(false);
 
   const [error, setError] =
     useState<string | null>(null);
 
-  const requestIdRef = useRef(0);
-  const queryRef = useRef('');
   const mountedRef = useRef(false);
+  const requestIdRef = useRef(0);
+
+  const queryRef = useRef('');
+  const shopIdRef = useRef<string | null>(null);
+
   const refreshingRef = useRef(false);
+  const initializedRef = useRef(false);
+
+  const searchTimerRef = useRef<
+    ReturnType<typeof setTimeout> | null
+  >(null);
 
   const syncState = useSyncExternalStore(
     subscribeToSyncState,
@@ -109,13 +161,20 @@ export function useHomeData() {
     getSyncState
   );
 
+  const clearSearchTimer = useCallback(() => {
+    if (searchTimerRef.current !== null) {
+      clearTimeout(searchTimerRef.current);
+      searchTimerRef.current = null;
+    }
+  }, []);
+
   const loadHome = useCallback(
     async (
       currentShopId: string,
       searchQuery = '',
       showRefreshing = false
     ): Promise<void> => {
-      const currentRequest = ++requestIdRef.current;
+      const requestId = ++requestIdRef.current;
 
       if (showRefreshing) {
         refreshingRef.current = true;
@@ -123,17 +182,19 @@ export function useHomeData() {
       }
 
       try {
-        setError(null);
-
         const search = searchQuery.trim();
 
         /*
-         * Shop totals always use ALL active parties.
-         * Search only filters the displayed party list.
+         * Full-shop financial totals must remain
+         * independent of the visible party list.
+         *
+         * These two calls currently read all
+         * party balances to calculate the
+         * positive/negative financial positions.
          */
         const [
-          allCustomers,
-          allSuppliers,
+          customerSummary,
+          supplierSummary,
         ] = await Promise.all([
           partyRepository.getBalanceSummary(
             currentShopId,
@@ -147,71 +208,81 @@ export function useHomeData() {
 
         if (
           !mountedRef.current ||
-          currentRequest !== requestIdRef.current
+          requestId !== requestIdRef.current
         ) {
           return;
         }
 
         const balances = calculateShopBalances(
-          allCustomers.parties,
-          allSuppliers.parties
+          customerSummary.parties,
+          supplierSummary.parties
+        );
+
+        /*
+         * Fetch the visible list separately.
+         *
+         * With no search, fetching 10 from each
+         * type is sufficient to identify the
+         * newest 10 across both types.
+         *
+         * Search is not restricted to the
+         * recent Home records.
+         */
+        const [
+          customerPage,
+          supplierPage,
+        ] = await Promise.all([
+          partyRepository.getBalancePage(
+            currentShopId,
+            'CUSTOMER',
+            {
+              query: search,
+              limit: search
+                ? 500
+                : HOME_RECENT_LIMIT,
+              offset: 0,
+            }
+          ),
+          partyRepository.getBalancePage(
+            currentShopId,
+            'SUPPLIER',
+            {
+              query: search,
+              limit: search
+                ? 500
+                : HOME_RECENT_LIMIT,
+              offset: 0,
+            }
+          ),
+        ]);
+
+        if (
+          !mountedRef.current ||
+          requestId !== requestIdRef.current
+        ) {
+          return;
+        }
+
+        const combined = combineParties(
+          customerPage.parties,
+          supplierPage.parties
         );
 
         setToReceive(balances.toReceive);
         setToPay(balances.toPay);
         setNetBalance(balances.netBalance);
 
-        let customerParties = allCustomers.parties;
-        let supplierParties = allSuppliers.parties;
-
-        if (search) {
-          const [
-            filteredCustomers,
-            filteredSuppliers,
-          ] = await Promise.all([
-            partyRepository.getBalanceSummary(
-              currentShopId,
-              'CUSTOMER',
-              search
-            ),
-            partyRepository.getBalanceSummary(
-              currentShopId,
-              'SUPPLIER',
-              search
-            ),
-          ]);
-
-          if (
-            !mountedRef.current ||
-            currentRequest !== requestIdRef.current
-          ) {
-            return;
-          }
-
-          customerParties = filteredCustomers.parties;
-          supplierParties = filteredSuppliers.parties;
-        }
-
-        const combinedParties: HomeParty[] = [
-          ...customerParties.map((party) => ({
-            ...party,
-            type: 'CUSTOMER' as const,
-          })),
-          ...supplierParties.map((party) => ({
-            ...party,
-            type: 'SUPPLIER' as const,
-          })),
-        ];
-
-        combinedParties.sort((a, b) =>
-          a.name.localeCompare(b.name)
+        setParties(
+          search
+            ? combined
+            : combined.slice(0, HOME_RECENT_LIMIT)
         );
 
-        setParties(combinedParties);
+        setError(null);
       } catch (loadError) {
         if (
           !mountedRef.current ||
-          currentRequest !== requestIdRef.current
+          requestId !== requestIdRef.current
         ) {
           return;
         }
@@ -228,8 +299,8 @@ export function useHomeData() {
         );
       } finally {
         if (
-          currentRequest === requestIdRef.current &&
-          mountedRef.current
+          mountedRef.current &&
+          requestId === requestIdRef.current
         ) {
           refreshingRef.current = false;
           setRefreshing(false);
@@ -241,6 +312,7 @@ export function useHomeData() {
 
   useEffect(() => {
     mountedRef.current = true;
+
     let cancelled = false;
 
     async function initialize() {
@@ -251,7 +323,9 @@ export function useHomeData() {
         const identity =
           await initializeAppService.execute();
 
-        if (cancelled) return;
+        if (cancelled) {
+          return;
+        }
 
         if (!identity) {
           throw new Error(
@@ -261,6 +335,8 @@ export function useHomeData() {
 
         const { shop, device } = identity;
 
+        shopIdRef.current = shop.id;
+
         setShopId(shop.id);
         setShopName(shop.name);
         setDeviceName(device.name ?? '');
@@ -269,8 +345,12 @@ export function useHomeData() {
           shop.id,
           queryRef.current
         );
+
+        initializedRef.current = true;
       } catch (initializeError) {
-        if (cancelled) return;
+        if (cancelled) {
+          return;
+        }
 
         console.error(
           '[home] Failed to initialize:',
@@ -295,18 +375,29 @@ export function useHomeData() {
       cancelled = true;
       mountedRef.current = false;
       requestIdRef.current += 1;
+      clearSearchTimer();
     };
-  }, [loadHome]);
+  }, [loadHome, clearSearchTimer]);
 
   useFocusEffect(
     useCallback(() => {
-      if (!shopId || loading) return;
+      if (!initializedRef.current) {
+        return;
+      }
+
+      const currentShopId = shopIdRef.current;
+
+      if (!currentShopId) {
+        return;
+      }
+
+      clearSearchTimer();
 
       void loadHome(
-        shopId,
+        currentShopId,
         queryRef.current
       );
-    }, [shopId, loading, loadHome])
+    }, [loadHome, clearSearchTimer])
   );
 
   useEffect(() => {
@@ -318,6 +409,8 @@ export function useHomeData() {
       return;
     }
 
+    clearSearchTimer();
+
     void loadHome(
       shopId,
       queryRef.current
@@ -327,58 +420,71 @@ export function useHomeData() {
     shopId,
     loading,
     loadHome,
+    clearSearchTimer,
   ]);
 
   const handleSearch = useCallback(
     (value: string) => {
       queryRef.current = value;
-      setQuery(value);
+      setQueryState(value);
 
+      /*
+       * Invalidate any in-flight request
+       * immediately when the query changes.
+       */
       requestIdRef.current += 1;
+
+      clearSearchTimer();
+
+      const currentShopId = shopIdRef.current;
+
+      if (!currentShopId) {
+        return;
+      }
+
+      searchTimerRef.current = setTimeout(() => {
+        searchTimerRef.current = null;
+
+        void loadHome(
+          currentShopId,
+          value
+        );
+      }, SEARCH_DELAY_MS);
     },
-    []
+    [loadHome, clearSearchTimer]
   );
 
-  useEffect(() => {
-    if (!shopId || loading) return;
-
-    const timeout = setTimeout(() => {
-      void loadHome(shopId, query);
-    }, 180);
-
-    return () => clearTimeout(timeout);
-  }, [
-    query,
-    shopId,
-    loading,
-    loadHome,
-  ]);
-
   const refresh = useCallback(async () => {
-    if (!shopId || refreshingRef.current) {
+    const currentShopId = shopIdRef.current;
+
+    if (
+      !currentShopId ||
+      refreshingRef.current
+    ) {
       return;
     }
 
+    clearSearchTimer();
+
     await loadHome(
-      shopId,
+      currentShopId,
       queryRef.current,
       true
     );
-  }, [shopId, loadHome]);
+  }, [loadHome, clearSearchTimer]);
 
   return {
     shopName,
     deviceName,
     parties,
 
-    // New party-based financial totals
     toReceive,
     toPay,
     netBalance,
 
-    // Compatibility with existing Home callers.
-    // These now represent financial positions,
-    // NOT historical transaction flows.
+    // Existing Home compatibility values.
+    // These are financial positions, not
+    // historical transaction-flow totals.
     totalOutstanding: netBalance,
     totalMoneyOut: toReceive,
     totalMoneyIn: toPay,

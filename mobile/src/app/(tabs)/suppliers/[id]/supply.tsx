@@ -1,6 +1,6 @@
-
 import React, {
   useCallback,
+  useEffect,
   useMemo,
   useRef,
   useState,
@@ -39,6 +39,8 @@ import {
 } from '@/hooks/ledger/useAddSupply';
 
 import { ITEM_UNITS } from '@/config/item-units';
+import { UdhaarModeToggle } from '@/components/ledger/udhaar/UdhaarModeToggle';
+import type { UdhaarEntryMode } from '@/hooks/ledger/udhaar/types';
 
 function firstParam(
   value: string | string[] | undefined
@@ -98,20 +100,39 @@ export default function AddSupplyScreen() {
 
   const [pickerRowId, setPickerRowId] =
     useState<string | null>(null);
+  const pendingSelection = useRef<{ product: AvailableSupplyItem; existingIds: Set<string> } | null>(null);
 
   const [search, setSearch] = useState('');
+  const [entryMode, setEntryMode] = useState<UdhaarEntryMode>('quantity');
+  const [amountDrafts, setAmountDrafts] = useState<Record<string, string>>({});
+
+  // The hook may maintain an initial blank draft. Never render it as a selected product.
+  const selectedItems = useMemo(
+    () => items.filter((item) => !!item.itemId && !!item.name.trim()),
+    [items]
+  );
 
   const filteredProducts = useMemo(() => {
-    const query = search.trim().toLowerCase();
+    const query = search.trim().toLocaleLowerCase();
 
-    if (!query) {
-      return availableItems;
-    }
+    const options = availableItems.filter((product) => {
+      const alreadySelected = items.some((row) =>
+        row.itemId === product.item_id && row.id !== pickerRowId
+      );
+      return !alreadySelected;
+    });
 
-    return availableItems.filter((product) =>
-      product.item_name.toLowerCase().includes(query)
-    );
-  }, [availableItems, search]);
+    if (!query) return options;
+
+    return options.filter((product) =>
+      product.item_name.toLocaleLowerCase().includes(query)
+    ).sort((a, b) => {
+      const aName = a.item_name.toLocaleLowerCase();
+      const bName = b.item_name.toLocaleLowerCase();
+      const rank = (name: string) => name === query ? 0 : name.startsWith(query) ? 1 : 2;
+      return rank(aName) - rank(bName) || aName.localeCompare(bName);
+    });
+  }, [availableItems, search, items, pickerRowId]);
 
   const handleClose = useCallback(() => {
     Keyboard.dismiss();
@@ -137,6 +158,7 @@ export default function AddSupplyScreen() {
   const handleSave = useCallback(async () => {
     if (
       !validAmount ||
+      selectedItems.length === 0 ||
       saving ||
       savingRef.current
     ) {
@@ -174,17 +196,15 @@ export default function AddSupplyScreen() {
     } finally {
       savingRef.current = false;
     }
-  }, [validAmount, saving, save, handleClose]);
+  }, [validAmount, selectedItems.length, saving, save, handleClose]);
 
+  // Opening Add Item must not create an empty row. Create it only
+  // after the user chooses a product from this supplier's list.
   const handleAddItem = useCallback(() => {
-    addItemRow();
-
-    requestAnimationFrame(() => {
-      scrollRef.current?.scrollToEnd({
-        animated: true,
-      });
-    });
-  }, [addItemRow]);
+    Keyboard.dismiss();
+    setSearch('');
+    setPickerRowId('__new__');
+  }, []);
 
   const openPicker = useCallback((rowId: string) => {
     Keyboard.dismiss();
@@ -199,15 +219,41 @@ export default function AddSupplyScreen() {
 
   const handleSelectProduct = useCallback(
     (product: AvailableSupplyItem) => {
-      if (!pickerRowId || saving) {
-        return;
+      if (!pickerRowId || saving) return;
+
+      if (pickerRowId === '__new__') {
+        // Reuse an existing blank row (some supply hooks start with one).
+        const blankRow = items.find((row) => !row.itemId);
+        if (blankRow) {
+          selectItem(blankRow.id, product);
+        } else {
+          pendingSelection.current = {
+            product,
+            existingIds: new Set(items.map((row) => row.id)),
+          };
+          addItemRow();
+        }
+      } else {
+        selectItem(pickerRowId, product);
       }
 
-      selectItem(pickerRowId, product);
       closePicker();
     },
-    [pickerRowId, saving, selectItem, closePicker]
+    [pickerRowId, saving, items, selectItem, addItemRow, closePicker]
   );
+
+  // addItemRow() may return void. Select using the newly created ID
+  // after React commits the row, rather than assuming a return value.
+  useEffect(() => {
+    const pending = pendingSelection.current;
+    if (!pending) return;
+
+    const newRow = items.find((row) => !pending.existingIds.has(row.id));
+    if (!newRow) return;
+
+    pendingSelection.current = null;
+    selectItem(newRow.id, pending.product);
+  }, [items, selectItem]);
 
   if (loading) {
     return (
@@ -281,7 +327,7 @@ export default function AddSupplyScreen() {
 
         <SaveButton
           loading={saving}
-          disabled={!validAmount || saving}
+          disabled={!validAmount || selectedItems.length === 0 || saving}
           accessibilityLabel="Save Supply"
           onPress={() => {
             void handleSave();
@@ -338,204 +384,115 @@ export default function AddSupplyScreen() {
           </View>
 
           <View className="px-5">
-            {/* Items heading */}
-            <View className="mb-4 mt-7 flex-row items-center justify-between">
-              <View className="min-w-0 flex-1">
-                <AppText className="font-spline-semibold text-[18px] text-foreground">
-                  Supply items
-                </AppText>
+            {/* Compact item actions */}
+            <Pressable
+              onPress={handleAddItem}
+              disabled={saving || availableItems.length === 0}
+              accessibilityRole="button"
+              accessibilityLabel="Add supply item"
+              className="mt-5 flex-row items-center justify-center gap-2 rounded-control border border-border bg-surface px-4 py-4 active:opacity-70"
+            >
+              <Ionicons name="add-circle-outline" size={22} color="#181816" />
+              <AppText variant="bodyMedium">Add Item</AppText>
+            </Pressable>
 
-                <AppText className="mt-1 text-[12px] text-muted">
-                  Select supplier products and enter quantity
-                </AppText>
-              </View>
-
-              <Pressable
-                onPress={handleAddItem}
-                disabled={
-                  saving ||
-                  availableItems.length === 0
-                }
-                accessibilityRole="button"
-                accessibilityLabel="Add another item"
-                className="flex-row items-center rounded-full bg-chip px-3 py-2"
-              >
-                <Ionicons
-                  name="add"
-                  size={18}
-                  color="#242422"
-                />
-
-                <AppText className="ml-1 font-spline-medium text-[13px] text-foreground">
-                  Add item
-                </AppText>
-              </Pressable>
+            <View className="mb-5 mt-4 flex-row items-center justify-between gap-3">
+              <AppText variant="small">Entry mode</AppText>
+              <UdhaarModeToggle
+                mode={entryMode}
+                onChangeMode={(nextMode) => {
+                  if (nextMode === 'amount') {
+                    const drafts: Record<string, string> = {};
+                    for (const item of items) {
+                      const quantity = Number(item.quantity);
+                      const price = Number(item.unitPrice);
+                      if (item.quantity.trim() && item.unitPrice.trim() && Number.isFinite(quantity) && Number.isFinite(price)) {
+                        drafts[item.id] = String(Math.round(quantity * price));
+                      }
+                    }
+                    setAmountDrafts(drafts);
+                  }
+                  setEntryMode(nextMode);
+                }}
+                disabled={saving}
+                className="w-52"
+              />
             </View>
 
             {availableItems.length === 0 ? (
               <View className="mb-4 rounded-xl border border-border bg-chip px-4 py-4">
-                <AppText className="font-spline-semibold text-[14px] text-foreground">
-                  No supplier products
-                </AppText>
-
-                <AppText className="mt-2 text-[13px] text-muted">
+                <AppText variant="bodyMedium">No supplier products</AppText>
+                <AppText variant="small" className="mt-2">
                   Add products to this supplier before recording a supply.
                 </AppText>
               </View>
             ) : null}
 
-            {/* Supply rows */}
-            {availableItems.length > 0 &&
-              items.map((item, index) => {
+            <View className="gap-3">
+              {selectedItems.map((item) => {
                 const quantity = Number(item.quantity);
                 const price = Number(item.unitPrice);
-
-                const lineAmount =
-                  item.quantity.trim() &&
-                  item.unitPrice.trim() &&
-                  Number.isFinite(quantity) &&
-                  Number.isFinite(price)
-                    ? quantity * price
-                    : 0;
-
+                const lineAmount = item.quantity.trim() && item.unitPrice.trim() && Number.isFinite(quantity) && Number.isFinite(price)
+                  ? Math.round(quantity * price) : 0;
+                const unit = item.unit ? getUnitLabel(item.unit) : 'No unit';
+                const amountValue = amountDrafts[item.id] ?? (item.quantity.trim() ? String(lineAmount) : '');
                 return (
-                  <View
-                    key={item.id}
-                    className="mb-4 rounded-2xl border border-border bg-background p-4"
-                  >
-                    <View className="mb-4 flex-row items-center justify-between">
-                      <AppText className="font-spline-semibold text-[14px] text-foreground">
-                        Item {index + 1}
+                  <View key={item.id} className="min-h-[76px] flex-row items-center gap-2 rounded-control border border-border bg-background px-3 py-3">
+                    <View className="min-w-0 flex-1 justify-center">
+                      <AppText variant="bodyMedium" numberOfLines={1}>
+                        {item.itemId ? item.name : 'Select product'}
                       </AppText>
-
-                      {items.length > 1 ? (
-                        <Pressable
-                          onPress={() =>
-                            removeItem(item.id)
-                          }
-                          disabled={saving}
-                          accessibilityRole="button"
-                          accessibilityLabel={`Remove item ${index + 1}`}
-                          hitSlop={8}
-                          className="h-8 w-8 items-center justify-center"
-                        >
-                          <Ionicons
-                            name="trash-outline"
-                            size={18}
-                            color="#B44A43"
-                          />
-                        </Pressable>
-                      ) : null}
+                      <AppText variant="caption" numberOfLines={1} className="mt-1">
+                        {item.itemId ? `${unit} · Rs ${formatMoney(price)}/${item.unit || 'unit'}` : 'Tap to choose supplier product'}
+                      </AppText>
                     </View>
 
-                    {/* Supplier product picker */}
-                    <AppText className="mb-2 text-[12px] text-muted">
-                      Supplier product
-                    </AppText>
+                    <View className="h-12 w-[132px] flex-row items-center rounded-control border border-border bg-surface px-3">
+                      {entryMode === 'amount' ? (
+                        <AppText variant="small" className="mr-1">Rs</AppText>
+                      ) : null}
+                      <TextInput
+                        value={entryMode === 'quantity' ? item.quantity : amountValue}
+                        onChangeText={(value) => {
+                          if (entryMode === 'quantity') {
+                            updateItem(item.id, { quantity: value });
+                          } else {
+                            if (!/^\d*$/.test(value)) return;
+                            setAmountDrafts((current) => ({ ...current, [item.id]: value }));
+                            if (value && price > 0 && Number.isFinite(price)) {
+                              updateItem(item.id, { quantity: String(Number(value) / price) });
+                            } else {
+                              updateItem(item.id, { quantity: '' });
+                            }
+                          }
+                        }}
+                        editable={!saving && !!item.itemId && (entryMode === 'quantity' || price > 0)}
+                        keyboardType={entryMode === 'quantity' ? 'decimal-pad' : 'number-pad'}
+                        placeholder={entryMode === 'quantity' ? 'Qty' : '0'}
+                        placeholderTextColor="#9A9A93"
+                        selectTextOnFocus
+                        accessibilityLabel={`${entryMode === 'quantity' ? 'Quantity' : 'Amount'} for ${item.name}`}
+                        className="min-w-0 flex-1 p-0 text-right font-sans text-[17px] text-foreground"
+                      />
+                    </View>
 
                     <Pressable
-                      onPress={() =>
-                        openPicker(item.id)
-                      }
+                      onPress={() => removeItem(item.id)}
                       disabled={saving}
                       accessibilityRole="button"
-                      accessibilityLabel="Select supplier product"
-                      className="min-h-12 flex-row items-center justify-between rounded-control border border-border px-3"
+                      accessibilityLabel={`Remove ${item.name || 'item'}`}
+                      hitSlop={6}
+                      className="h-9 w-8 items-center justify-center"
                     >
-                      <AppText
-                        numberOfLines={1}
-                        className={
-                          item.itemId
-                            ? 'min-w-0 flex-1 text-[16px] text-foreground'
-                            : 'min-w-0 flex-1 text-[16px] text-muted'
-                        }
-                      >
-                        {item.itemId
-                          ? item.name
-                          : 'Select product'}
-                      </AppText>
-
-                      <Ionicons
-                        name="chevron-down"
-                        size={18}
-                        color="#9B9B96"
-                      />
+                      <Ionicons name="trash-outline" size={19} color="#777770" />
                     </Pressable>
-
-                    {/* Quantity and purchase unit */}
-                    <View className="mt-4 flex-row gap-3">
-                      <View className="flex-[2]">
-                        <AppText className="mb-2 text-[12px] text-muted">
-                          Quantity
-                        </AppText>
-
-                        <TextInput
-                          value={item.quantity}
-                          onChangeText={(value) =>
-                            updateItem(item.id, {
-                              quantity: value,
-                            })
-                          }
-                          keyboardType="decimal-pad"
-                          placeholder="1"
-                          placeholderTextColor="#9B9B96"
-                          editable={
-                            !saving && !!item.itemId
-                          }
-                          className="min-h-12 rounded-control border border-border px-3 font-sans text-[16px] text-foreground"
-                        />
-                      </View>
-
-                      <View className="flex-1">
-                        <AppText className="mb-2 text-[12px] text-muted">
-                          Unit
-                        </AppText>
-
-                        <View className="min-h-12 justify-center rounded-control border border-border bg-chip px-3">
-                          <AppText
-                            numberOfLines={1}
-                            className="text-[14px] text-foreground"
-                          >
-                            {item.unit
-                              ? getUnitLabel(item.unit)
-                              : '—'}
-                          </AppText>
-                        </View>
-                      </View>
-                    </View>
-
-                    {/* Supplier purchase price */}
-                    <View className="mt-4">
-                      <AppText className="mb-2 text-[12px] text-muted">
-                        Purchase price per unit (Rs)
-                      </AppText>
-
-                      <View className="min-h-12 justify-center rounded-control border border-border bg-chip px-3">
-                        <AppText className="text-[16px] text-foreground">
-                          {item.itemId
-                            ? formatMoney(
-                                Number(item.unitPrice)
-                              )
-                            : 'Select a product'}
-                        </AppText>
-                      </View>
-                    </View>
-
-                    {/* Calculated line total */}
-                    <View className="mt-4 flex-row items-center justify-between border-t border-border pt-3">
-                      <AppText className="text-[13px] text-muted">
-                        Item total
-                      </AppText>
-
-                      <AppText className="font-spline-semibold text-[16px] text-foreground">
-                        Rs {formatMoney(lineAmount)}
-                      </AppText>
-                    </View>
                   </View>
                 );
               })}
+            </View>
 
-            {/* Supply totals */}
+            {/* Show totals only after a supplier product has been selected. */}
+            {selectedItems.length > 0 ? (
             <View className="mt-4 rounded-2xl bg-chip px-4 py-5">
               <View className="flex-row items-center justify-between">
                 <AppText className="font-spline-medium text-[15px] text-foreground">
@@ -559,6 +516,8 @@ export default function AddSupplyScreen() {
                 </AppText>
               </View>
             </View>
+
+            ) : null}
 
             {saveError ? (
               <View className="mt-5 rounded-xl border border-udhaar/20 bg-udhaar/5 px-4 py-3">
@@ -588,9 +547,14 @@ export default function AddSupplyScreen() {
 
           <View className="max-h-[80%] rounded-t-[24px] bg-background px-5 pb-8 pt-5">
             <View className="mb-4 flex-row items-center justify-between">
-              <AppText className="font-spline-bold text-[19px] text-foreground">
-                Select Supplier Product
-              </AppText>
+              <View>
+                <AppText className="font-spline-bold text-[19px] text-foreground">
+                  {pickerRowId === '__new__' ? 'Add Item' : 'Change Item'}
+                </AppText>
+                <AppText className="mt-1 text-[12px] text-muted">
+                  Products from this supplier only
+                </AppText>
+              </View>
 
               <Pressable
                 onPress={closePicker}
@@ -638,7 +602,7 @@ export default function AddSupplyScreen() {
                     accessibilityState={{
                       selected,
                     }}
-                    className="min-h-[64px] flex-row items-center justify-between border-b border-border py-3"
+                    className="min-h-[60px] flex-row items-center justify-between border-b border-border py-3"
                   >
                     <View className="min-w-0 flex-1">
                       <AppText
@@ -670,7 +634,7 @@ export default function AddSupplyScreen() {
 
               {filteredProducts.length === 0 ? (
                 <AppText className="py-8 text-center text-[13px] text-muted">
-                  No matching supplier products found.
+                  No available supplier products found.
                 </AppText>
               ) : null}
             </ScrollView>

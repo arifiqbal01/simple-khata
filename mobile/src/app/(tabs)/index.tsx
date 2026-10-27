@@ -1,5 +1,8 @@
 
-import React, { useCallback } from 'react';
+import React, {
+  useCallback,
+  useMemo,
+} from 'react';
 
 import {
   ActivityIndicator,
@@ -27,29 +30,41 @@ import {
 
 import { useHomeData } from '@/hooks/home/useHomeData';
 
+const HOME_RECENT_LIMIT = 10;
+
 export default function HomeScreen() {
- const {
-  shopName,
-  deviceName,
-  parties,
+  const {
+    shopName,
+    deviceName,
+    parties,
 
-  // New party-based summary values
-  toReceive,
-  toPay,
-  netBalance,
+    toReceive,
+    toPay,
 
-  // Existing values retained for compatibility
-  totalOutstanding,
-  totalMoneyOut,
-  totalMoneyIn,
+    query,
+    loading,
+    refreshing,
+    error,
+    setQuery,
+    refresh,
+  } = useHomeData();
 
-  query,
-  loading,
-  refreshing,
-  error,
-  setQuery,
-  refresh,
-} = useHomeData();
+  const isSearching = query.trim().length > 0;
+
+  /*
+   * The Home data hook should return parties
+   * ordered by their latest activity.
+   *
+   * Limit the visible Home list to 10 only
+   * when the user is not searching.
+   */
+  const visibleParties = useMemo(() => {
+    if (isSearching) {
+      return parties;
+    }
+
+    return parties.slice(0, HOME_RECENT_LIMIT);
+  }, [parties, isSearching]);
 
   const handleOpenParty = useCallback(
     (
@@ -117,52 +132,72 @@ export default function HomeScreen() {
     );
   }
 
-  const isSearching = query.trim().length > 0;
-
   return (
     <Screen className="bg-background">
       <PartyList
-        parties={parties}
+        parties={visibleParties}
         refreshing={refreshing}
         onRefresh={refresh}
         onOpenParty={handleOpenParty}
         onQuickTransaction={handleQuickTransaction}
         contentContainerClassName={
-          parties.length === 0
+          visibleParties.length === 0
             ? 'flex-grow pb-5'
             : 'pb-5'
         }
         ListHeaderComponent={
           <View>
-            {/* Keep original Home header */}
             <HomeHeader
               shopName={shopName}
               deviceName={deviceName}
             />
 
-            {/* Keep original outstanding summary */}
             <OutstandingSummary
               toReceive={toReceive}
               toPay={toPay}
             />
 
-            {/* Search customers and suppliers */}
-            <View className="mb-5">
+            <View className="mb-4">
               <SearchField
                 value={query}
                 onChangeText={setQuery}
-                placeholder="Search parties..."
+                placeholder="Search customers or suppliers..."
               />
             </View>
 
-            {/* Error message */}
             {error ? (
-              <View className="mb-5 rounded-control bg-udhaar-soft px-4 py-3">
+              <View className="mb-4 rounded-control bg-udhaar-soft px-4 py-3">
                 <AppText
                   variant="small"
                   className="text-udhaar"
                 >
                   {error}
+                </AppText>
+              </View>
+            ) : null}
+
+            {visibleParties.length > 0 && !isSearching ? (
+              <View className="mb-3 flex-row items-center justify-between px-1">
+                <AppText
+                  className="font-spline-semibold text-[14px] text-foreground"
+                >
+                  Recent activity
+                </AppText>
+
+                <AppText
+                  className="text-[12px] text-muted"
+                >
+                  Latest {HOME_RECENT_LIMIT}
+                </AppText>
+              </View>
+            ) : null}
+
+            {visibleParties.length > 0 && isSearching ? (
+              <View className="mb-3 px-1">
+                <AppText
+                  className="font-spline-medium text-[12px] text-muted"
+                >
+                  Search results
                 </AppText>
               </View>
             ) : null}

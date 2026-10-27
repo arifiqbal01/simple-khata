@@ -1,13 +1,20 @@
 
 import {
   memo,
+  useCallback,
+  useEffect,
   useMemo,
+  useRef,
   useState,
 } from 'react';
 
 import {
+  ActivityIndicator,
   Keyboard,
+  Modal,
+  PanResponder,
   Pressable,
+  ScrollView,
   View,
 } from 'react-native';
 
@@ -15,279 +22,559 @@ import { Ionicons } from '@expo/vector-icons';
 
 import {
   AppText,
-  TextField,
+  IconButton,
+  SearchField,
 } from '@/components/ui';
 
 import type { Item } from '@/types/domain';
+import type { QuickItem } from '@/services/item/get-quick-items';
 
-import type {
-  DraftUdhaarItem,
-} from '@/hooks/ledger/useAddUdhaar';
+import { SearchItemsService } from '@/services/item/search';
+import { ItemRepository } from '@/repositories/item/item';
+import { normalizeName } from '@/hooks/ledger/udhaar/utils';
 
-interface ItemSearchFieldsProps {
-  drafts: DraftUdhaarItem[];
-  availableItems: Item[];
+const SEARCH_LIMIT = 50;
+const QUICK_LIMIT = 5;
+
+const itemRepository = new ItemRepository();
+const searchService = new SearchItemsService(itemRepository);
+
+export interface ItemSearchSheetProps {
+  visible: boolean;
+  shopId: string | null;
+  quickItems: QuickItem[];
   selectedItemIds: string[];
 
-  onChangeName: (id: string, name: string) => void;
-  onSelectItem: (draftId: string, item: Item) => void;
-  onConfirm: (id: string) => void;
-  onRemove: (id: string) => void;
-  onAdd: () => void;
-  onFocusField?: () => void;
+  onClose: () => void;
+  onSelectItem: (item: Item) => void;
+  onCreateNew: (name: string) => void;
 }
 
-function normalizeName(name: string): string {
-  return name.trim().toLocaleLowerCase();
-}
-
-export const ItemSearchFields = memo(
-  function ItemSearchFields({
-    drafts,
-    availableItems,
+export const ItemSearchSheet = memo(
+  function ItemSearchSheet({
+    visible,
+    shopId,
+    quickItems,
     selectedItemIds,
-    onChangeName,
+    onClose,
     onSelectItem,
-    onConfirm,
-    onRemove,
-    onAdd,
-    onFocusField,
-  }: ItemSearchFieldsProps) {
-    const [focusedId, setFocusedId] =
-      useState<string | null>(null);
+    onCreateNew,
+  }: ItemSearchSheetProps) {
+    const [query, setQuery] = useState('');
+    const [results, setResults] = useState<Item[]>([]);
+    const [quickResults, setQuickResults] = useState<Item[]>([]);
+    const [exactMatch, setExactMatch] = useState<Item | null>(null);
+
+    const [searchLoading, setSearchLoading] = useState(false);
+    const [quickLoading, setQuickLoading] = useState(false);
+    const [exactLoading, setExactLoading] = useState(false);
+
+    const [searchError, setSearchError] = useState<string | null>(null);
+    const [exactError, setExactError] = useState<string | null>(null);
+
+    const searchRequest = useRef(0);
+    const quickRequest = useRef(0);
+    const exactRequest = useRef(0);
+
+    const trimmedQuery = query.trim();
+    const normalizedQuery = normalizeName(trimmedQuery);
 
     const selectedSet = useMemo(
       () => new Set(selectedItemIds),
       [selectedItemIds]
     );
 
-    function selectSuggestion(
-      draftId: string,
-      item: Item
-    ) {
-      onSelectItem(draftId, item);
-      setFocusedId(null);
-      Keyboard.dismiss();
-    }
+    const closeSheet = useCallback(() => {
+      searchRequest.current += 1;
+      quickRequest.current += 1;
+      exactRequest.current += 1;
 
-    function confirmDraft(draftId: string) {
-      onConfirm(draftId);
-      setFocusedId(null);
       Keyboard.dismiss();
-    }
+      onClose();
+    }, [onClose]);
 
-    function removeDraft(draftId: string) {
-      onRemove(draftId);
-      setFocusedId(null);
-    }
+    useEffect(() => {
+      if (!visible) {
+        searchRequest.current += 1;
+        quickRequest.current += 1;
+        exactRequest.current += 1;
+        return;
+      }
+
+      setQuery('');
+      setResults([]);
+      setQuickResults([]);
+      setExactMatch(null);
+      setSearchError(null);
+      setExactError(null);
+      setSearchLoading(false);
+      setQuickLoading(false);
+      setExactLoading(false);
+    }, [visible]);
+
+    /*
+     * Resolve the most-used items from SQLite.
+     * Their IDs may be outside the first page
+     * of the catalog.
+     */
+    useEffect(() => {
+      const request = ++quickRequest.current;
+
+      if (!visible || !shopId) {
+        setQuickResults([]);
+        setQuickLoading(false);
+        return;
+      }
+
+      const ids = quickItems
+        .map((item) => item.id)
+        .filter(
+          (id): id is string =>
+            typeof id === 'string' && id.trim().length > 0
+        );
+
+      if (ids.length === 0) {
+        setQuickResults([]);
+        setQuickLoading(false);
+        return;
+      }
+
+      setQuickLoading(true);
+      setQuickResults([]);
+
+      void itemRepository
+        .getManyByIds(shopId, ids)
+        .then((items) => {
+          if (request !== quickRequest.current) {
+            return;
+          }
+
+          const byId = new Map(
+            items
+              .filter((item) => item.deleted_at == null)
+              .map((item) => [item.id, item])
+          );
+
+          const ordered: Item[] = [];
+          const seen = new Set<string>();
+
+          for (const quickItem of quickItems) {
+            if (!quickItem.id || seen.has(quickItem.id)) {
+              continue;
+            }
+
+            const item = byId.get(quickItem.id);
+
+            if (item) {
+              seen.add(item.id);
+              ordered.push(item);
+            }
+
+            if (ordered.length >= QUICK_LIMIT) {
+              break;
+            }
+          }
+
+          setQuickResults(ordered);
+        })
+        .catch((cause: unknown) => {
+          if (request !== quickRequest.current) {
+            return;
+          }
+
+          console.warn(
+            '[ItemSearchSheet] Most-used lookup failed',
+            cause
+          );
+
+          setQuickResults([]);
+        })
+        .finally(() => {
+          if (request === quickRequest.current) {
+            setQuickLoading(false);
+          }
+        });
+
+      return () => {
+        quickRequest.current += 1;
+      };
+    }, [visible, shopId, quickItems]);
+
+    /*
+     * Search the full catalog using the
+     * repository's exact/prefix/substring
+     * ranking.
+     */
+    useEffect(() => {
+      const request = ++searchRequest.current;
+
+      setResults([]);
+      setSearchError(null);
+
+      if (!visible || !shopId || !trimmedQuery) {
+        setSearchLoading(false);
+        return;
+      }
+
+      setSearchLoading(true);
+
+      const timeout = setTimeout(() => {
+        void searchService
+          .execute({
+            shopId,
+            query: trimmedQuery,
+            limit: SEARCH_LIMIT,
+            offset: 0,
+          })
+          .then((items) => {
+            if (request === searchRequest.current) {
+              setResults(items);
+            }
+          })
+          .catch((cause: unknown) => {
+            if (request !== searchRequest.current) {
+              return;
+            }
+
+            console.warn(
+              '[ItemSearchSheet] Search failed',
+              cause
+            );
+
+            setSearchError(
+              'Unable to search items. Please try again.'
+            );
+          })
+          .finally(() => {
+            if (request === searchRequest.current) {
+              setSearchLoading(false);
+            }
+          });
+      }, 180);
+
+      return () => {
+        clearTimeout(timeout);
+        searchRequest.current += 1;
+      };
+    }, [visible, shopId, trimmedQuery]);
+
+    /*
+     * Verify exact names independently of
+     * the paginated search results.
+     */
+    useEffect(() => {
+      const request = ++exactRequest.current;
+
+      setExactMatch(null);
+      setExactError(null);
+
+      if (!visible || !shopId || !trimmedQuery) {
+        setExactLoading(false);
+        return;
+      }
+
+      setExactLoading(true);
+
+      void itemRepository
+        .getByNameAndShop(shopId, trimmedQuery)
+        .then((item) => {
+          if (request === exactRequest.current) {
+            setExactMatch(
+              item && item.deleted_at == null ? item : null
+            );
+          }
+        })
+        .catch((cause: unknown) => {
+          if (request !== exactRequest.current) {
+            return;
+          }
+
+          console.warn(
+            '[ItemSearchSheet] Exact-name lookup failed',
+            cause
+          );
+
+          setExactError(
+            'Unable to verify item name. Please try again.'
+          );
+        })
+        .finally(() => {
+          if (request === exactRequest.current) {
+            setExactLoading(false);
+          }
+        });
+
+      return () => {
+        exactRequest.current += 1;
+      };
+    }, [visible, shopId, trimmedQuery]);
+
+    const suggestions = useMemo(() => {
+      const source = trimmedQuery ? results : quickResults;
+      const seen = new Set<string>();
+
+      return source.filter((item) => {
+        if (
+          item.deleted_at != null ||
+          selectedSet.has(item.id) ||
+          seen.has(item.id)
+        ) {
+          return false;
+        }
+
+        seen.add(item.id);
+        return true;
+      });
+    }, [trimmedQuery, results, quickResults, selectedSet]);
+
+    const exactAlreadySelected =
+      exactMatch !== null && selectedSet.has(exactMatch.id);
+
+    const error = searchError ?? exactError;
+
+    const canCreate =
+      normalizedQuery.length > 0 &&
+      normalizedQuery.length <= 150 &&
+      !searchLoading &&
+      !exactLoading &&
+      error === null &&
+      exactMatch === null;
+
+    const handleSelect = useCallback(
+      (item: Item) => {
+        Keyboard.dismiss();
+        onSelectItem(item);
+        onClose();
+      },
+      [onSelectItem, onClose]
+    );
+
+    const handleCreate = useCallback(() => {
+      if (!canCreate) {
+        return;
+      }
+
+      Keyboard.dismiss();
+      onCreateNew(trimmedQuery);
+    }, [canCreate, trimmedQuery, onCreateNew]);
+
+    const panResponder = useMemo(
+      () =>
+        PanResponder.create({
+          onMoveShouldSetPanResponder: (_, gesture) =>
+            gesture.dy > 12 &&
+            Math.abs(gesture.dy) > Math.abs(gesture.dx),
+
+          onPanResponderRelease: (_, gesture) => {
+            if (gesture.dy > 70 || gesture.vy > 1.1) {
+              closeSheet();
+            }
+          },
+        }),
+      [closeSheet]
+    );
+
+    const loading = trimmedQuery
+      ? searchLoading || exactLoading
+      : quickLoading;
 
     return (
-      <View className="mt-5">
-        <View className="gap-4">
-          {drafts.map((draft) => {
-            const name = draft.name.trim();
-            const query = normalizeName(name);
+      <Modal
+        visible={visible}
+        transparent
+        animationType="slide"
+        statusBarTranslucent
+        onRequestClose={closeSheet}
+      >
+        <View className="flex-1 justify-end">
+          <Pressable
+            className="absolute inset-0 bg-black/40"
+            onPress={closeSheet}
+            accessibilityRole="button"
+            accessibilityLabel="Close item search"
+          />
 
-            const matches =
-              focusedId === draft.id &&
-              query.length > 0
-                ? availableItems
-                    .filter(
-                      (item) =>
-                        normalizeName(item.name).includes(
-                          query
-                        ) &&
-                        !selectedSet.has(item.id)
-                    )
-                    .slice(0, 5)
-                : [];
+          <View className="max-h-[85%] rounded-t-3xl bg-background px-5 pb-8 pt-3">
+            <View
+              {...panResponder.panHandlers}
+              className="items-center pb-4"
+            >
+              <View className="h-1.5 w-12 rounded-full bg-border-strong" />
+            </View>
 
-            const exactCatalogItem =
-              availableItems.find(
-                (item) =>
-                  normalizeName(item.name) === query
-              );
+            <View className="mb-4 flex-row items-center justify-between">
+              <AppText variant="heading">
+                Add item
+              </AppText>
 
-            const canConfirm = query.length > 0;
-
-            const isNewItem =
-              canConfirm && !exactCatalogItem;
-
-            return (
-              <View
-                key={draft.id}
-                className="gap-2"
+              <IconButton
+                onPress={closeSheet}
+                accessibilityLabel="Close item search"
               >
-                <View className="flex-row items-center gap-2">
-                  <TextField
-                    value={draft.name}
-                    onChangeText={(value) =>
-                      onChangeName(draft.id, value)
-                    }
-                    onFocus={() => {
-                      setFocusedId(draft.id);
-                      onFocusField?.();
-                    }}
-                    placeholder="Search or enter item"
-                    autoCapitalize="words"
-                    returnKeyType="done"
-                    onSubmitEditing={() => {
-                      if (canConfirm) {
-                        if (exactCatalogItem) {
-                          selectSuggestion(
-                            draft.id,
-                            exactCatalogItem
-                          );
-                        } else {
-                          confirmDraft(draft.id);
-                        }
-                      }
-                    }}
-                    className="flex-1"
-                  />
+                <Ionicons
+                  name="close"
+                  size={22}
+                  color="#777770"
+                />
+              </IconButton>
+            </View>
 
-                  <Pressable
-                    onPress={() =>
-                      removeDraft(draft.id)
-                    }
-                    accessibilityRole="button"
-                    accessibilityLabel="Remove item field"
-                    hitSlop={8}
-                    className="h-12 w-9 items-center justify-center rounded-xl"
-                  >
-                    <Ionicons
-                      name="close"
-                      size={21}
-                      color="#D9544D"
-                    />
-                  </Pressable>
+            <SearchField
+              value={query}
+              onChangeText={setQuery}
+              placeholder="Search or enter item"
+              accessibilityLabel="Search catalog items"
+              autoCapitalize="words"
+            />
+
+            <ScrollView
+              className="mt-4"
+              keyboardShouldPersistTaps="handled"
+              showsVerticalScrollIndicator={false}
+            >
+              {!trimmedQuery && (
+                <AppText variant="caption" className="mb-2">
+                  Most used items
+                </AppText>
+              )}
+
+              {loading ? (
+                <View className="items-center py-8">
+                  <ActivityIndicator color="#181816" />
                 </View>
+              ) : (
+                <>
+                  {suggestions.map((item, index) => (
+                    <Pressable
+                      key={item.id}
+                      onPress={() => handleSelect(item)}
+                      accessibilityRole="button"
+                      accessibilityLabel={`Select ${item.name}`}
+                      className={`flex-row items-center justify-between py-4 ${
+                        index < suggestions.length - 1
+                          ? 'border-b border-border'
+                          : ''
+                      }`}
+                    >
+                      <View className="min-w-0 flex-1">
+                        <AppText
+                          variant="bodyMedium"
+                          numberOfLines={1}
+                        >
+                          {item.name}
+                        </AppText>
 
-                {matches.length > 0 ? (
-                  <View className="overflow-hidden rounded-xl border border-border bg-surface">
-                    {matches.map((item, index) => (
-                      <Pressable
-                        key={item.id}
-                        onPress={() =>
-                          selectSuggestion(
-                            draft.id,
-                            item
-                          )
-                        }
-                        accessibilityRole="button"
-                        accessibilityLabel={`Select ${item.name}`}
-                        className={`flex-row items-center justify-between px-4 py-3 ${
-                          index < matches.length - 1
-                            ? 'border-b border-border'
-                            : ''
-                        }`}
-                      >
-                        <View className="min-w-0 flex-1">
-                          <AppText className="text-[15px] text-foreground">
-                            {item.name}
+                        {(item.default_unit ||
+                          item.default_selling_price != null) && (
+                          <AppText
+                            variant="caption"
+                            className="mt-1"
+                          >
+                            {[
+                              item.default_unit,
+                              item.default_selling_price != null
+                                ? `Rs ${item.default_selling_price}`
+                                : null,
+                            ]
+                              .filter(Boolean)
+                              .join(' · ')}
                           </AppText>
+                        )}
+                      </View>
 
-                          {item.default_unit ? (
-                            <AppText className="mt-1 text-[12px] text-muted">
-                              {item.default_unit}
-                              {item.default_selling_price != null
-                                ? ` · Rs ${item.default_selling_price}`
-                                : ''}
-                            </AppText>
-                          ) : null}
-                        </View>
+                      <Ionicons
+                        name="add-circle-outline"
+                        size={22}
+                        color="#777770"
+                      />
+                    </Pressable>
+                  ))}
+
+                  {suggestions.length === 0 && !error && (
+                    <AppText
+                      variant="small"
+                      className="py-6 text-center"
+                    >
+                      {trimmedQuery
+                        ? exactAlreadySelected
+                          ? 'This item is already selected.'
+                          : 'No matching items'
+                        : 'No frequently used items yet'}
+                    </AppText>
+                  )}
+
+                  {error && (
+                    <AppText
+                      variant="caption"
+                      className="py-4 text-center text-udhaar"
+                    >
+                      {error}
+                    </AppText>
+                  )}
+
+                  {exactMatch &&
+                    !selectedSet.has(exactMatch.id) &&
+                    !suggestions.some(
+                      (item) => item.id === exactMatch.id
+                    ) && (
+                      <Pressable
+                        onPress={() => handleSelect(exactMatch)}
+                        accessibilityRole="button"
+                        accessibilityLabel={`Select ${exactMatch.name}`}
+                        className="mt-2 flex-row items-center justify-between rounded-control bg-surface px-4 py-4"
+                      >
+                        <AppText variant="bodyMedium">
+                          {exactMatch.name}
+                        </AppText>
 
                         <Ionicons
                           name="add-circle-outline"
-                          size={20}
+                          size={22}
                           color="#777770"
                         />
                       </Pressable>
-                    ))}
-                  </View>
-                ) : null}
+                    )}
 
-                {isNewItem ? (
-                  <Pressable
-                    onPress={() =>
-                      confirmDraft(draft.id)
-                    }
-                    accessibilityRole="button"
-                    accessibilityLabel={`Add new item ${name}`}
-                    className="flex-row items-center rounded-xl border border-border bg-surface px-4 py-3"
-                  >
-                    <Ionicons
-                      name="add-circle-outline"
-                      size={21}
-                      color="#242422"
-                    />
+                  {canCreate && (
+                    <Pressable
+                      onPress={handleCreate}
+                      accessibilityRole="button"
+                      accessibilityLabel={`Create new item ${trimmedQuery}`}
+                      className="mt-3 flex-row items-center rounded-control border border-border bg-surface px-4 py-4"
+                    >
+                      <Ionicons
+                        name="add-circle-outline"
+                        size={22}
+                        color="#181816"
+                      />
 
-                    <View className="ml-3 flex-1">
-                      <AppText className="font-spline-medium text-[14px] text-foreground">
-                        Add new item
-                      </AppText>
+                      <View className="ml-3 min-w-0 flex-1">
+                        <AppText variant="bodyMedium">
+                          Add new item
+                        </AppText>
 
-                      <AppText
-                        numberOfLines={1}
-                        className="mt-1 text-[12px] text-muted"
-                      >
-                        {name}
-                      </AppText>
-                    </View>
+                        <AppText
+                          variant="caption"
+                          numberOfLines={1}
+                          className="mt-1"
+                        >
+                          {trimmedQuery}
+                        </AppText>
+                      </View>
 
-                    <Ionicons
-                      name="chevron-forward"
-                      size={17}
-                      color="#777770"
-                    />
-                  </Pressable>
-                ) : null}
-
-                {canConfirm && exactCatalogItem ? (
-                  <Pressable
-                    onPress={() =>
-                      selectSuggestion(
-                        draft.id,
-                        exactCatalogItem
-                      )
-                    }
-                    accessibilityRole="button"
-                    accessibilityLabel={`Add ${exactCatalogItem.name}`}
-                    className="flex-row items-center self-start rounded-xl bg-[#242422] px-4 py-3"
-                  >
-                    <Ionicons
-                      name="checkmark"
-                      size={17}
-                      color="#FFFFFF"
-                    />
-
-                    <AppText className="ml-2 font-spline-semibold text-[13px] text-white">
-                      Select item
-                    </AppText>
-                  </Pressable>
-                ) : null}
-              </View>
-            );
-          })}
+                      <Ionicons
+                        name="chevron-forward"
+                        size={18}
+                        color="#777770"
+                      />
+                    </Pressable>
+                  )}
+                </>
+              )}
+            </ScrollView>
+          </View>
         </View>
-
-        <Pressable
-          onPress={onAdd}
-          accessibilityRole="button"
-          accessibilityLabel="Add another item"
-          className="mt-5 flex-row items-center self-start rounded-xl border border-border bg-surface px-4 py-3"
-        >
-          <Ionicons
-            name="add"
-            size={19}
-            color="#242422"
-          />
-
-          <AppText className="ml-2 font-spline-medium text-[14px] text-foreground">
-            Add another item
-          </AppText>
-        </Pressable>
-      </View>
+      </Modal>
     );
   }
 );

@@ -13,81 +13,239 @@ import { ShopRepository } from '@/repositories/bootstrap/shop';
 
 export type PartyType = 'CUSTOMER' | 'SUPPLIER';
 
-type PartyBalanceResult = Awaited<
-  ReturnType<PartyRepository['getBalanceSummary']>
+type BalancePage = Awaited<
+  ReturnType<PartyRepository['getBalancePage']>
 >;
 
-type BalanceParty =
-  PartyBalanceResult['parties'][number];
+type BalanceParty = BalancePage['parties'][number];
 
 export type PartyWithBalance = BalanceParty & {
   type: PartyType;
 };
 
+const PAGE_SIZE = 20;
+const SEARCH_DELAY_MS = 250;
+
 const partyRepository = new PartyRepository();
 const shopRepository = new ShopRepository();
 
-export function usePartyList(partyType: PartyType) {
-  const [shopId, setShopId] =
-    useState<string | null>(null);
+function errorMessage(
+  cause: unknown,
+  fallback: string
+): string {
+  return cause instanceof Error
+    ? cause.message
+    : fallback;
+}
 
-  const [parties, setParties] =
-    useState<PartyWithBalance[]>([]);
+export function usePartyList(partyType: PartyType) {
+  const [shopId, setShopId] = useState<string | null>(
+    null
+  );
+
+  const [parties, setParties] = useState<
+    PartyWithBalance[]
+  >([]);
 
   const [query, setQuery] = useState('');
+
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [hasMore, setHasMore] = useState(false);
 
-  const [error, setError] =
-    useState<string | null>(null);
+  const [totalCount, setTotalCount] = useState(0);
+  const [totalOutstanding, setTotalOutstanding] =
+    useState(0);
 
+  const [error, setError] = useState<string | null>(
+    null
+  );
+
+  const mountedRef = useRef(true);
   const requestIdRef = useRef(0);
+
+  const shopIdRef = useRef<string | null>(null);
   const queryRef = useRef('');
 
-  const loadParties = useCallback(
+  const offsetRef = useRef(0);
+  const hasMoreRef = useRef(false);
+
+  const loadingMoreRef = useRef(false);
+  const refreshingRef = useRef(false);
+  const firstLoadRef = useRef(true);
+
+  const searchTimerRef = useRef<
+    ReturnType<typeof setTimeout> | null
+  >(null);
+
+  const cancelSearch = useCallback(() => {
+    if (searchTimerRef.current !== null) {
+      clearTimeout(searchTimerRef.current);
+      searchTimerRef.current = null;
+    }
+  }, []);
+
+  const applyPage = useCallback(
+    (
+      result: BalancePage,
+      append: boolean
+    ) => {
+      const mapped: PartyWithBalance[] =
+        result.parties.map((party) => ({
+          ...party,
+          type: partyType,
+        }));
+
+      setParties((current) => {
+        if (!append) {
+          return mapped;
+        }
+
+        const existingIds = new Set(
+          current.map((party) => party.id)
+        );
+
+        return [
+          ...current,
+          ...mapped.filter(
+            (party) => !existingIds.has(party.id)
+          ),
+        ];
+      });
+
+      offsetRef.current =
+        result.offset + result.parties.length;
+
+      hasMoreRef.current = result.hasMore;
+      setHasMore(result.hasMore);
+
+      setTotalCount(result.totalCount);
+      setTotalOutstanding(result.totalOutstanding);
+      setError(null);
+    },
+    [partyType]
+  );
+
+  const loadFirstPage = useCallback(
     async (
       currentShopId: string,
       searchQuery: string
     ): Promise<void> => {
       const requestId = ++requestIdRef.current;
 
+      hasMoreRef.current = false;
+      setHasMore(false);
+
       const result =
-        await partyRepository.getBalanceSummary(
+        await partyRepository.getBalancePage(
           currentShopId,
           partyType,
-          searchQuery
+          {
+            query: searchQuery,
+            limit: PAGE_SIZE,
+            offset: 0,
+          }
         );
 
       if (
+        !mountedRef.current ||
         requestId !== requestIdRef.current
       ) {
         return;
       }
 
-      setParties(
-        result.parties.map((party) => ({
-          ...party,
-          type: partyType,
-        }))
-      );
-
-      setError(null);
+      applyPage(result, false);
     },
-    [partyType]
+    [partyType, applyPage]
+  );
+
+  const loadNextPage = useCallback(
+    async (): Promise<void> => {
+      const currentShopId = shopIdRef.current;
+
+      if (
+        !currentShopId ||
+        !hasMoreRef.current ||
+        loadingMoreRef.current ||
+        refreshingRef.current ||
+        searchTimerRef.current !== null
+      ) {
+        return;
+      }
+
+      loadingMoreRef.current = true;
+      setLoadingMore(true);
+
+      const requestId = requestIdRef.current;
+      const offset = offsetRef.current;
+
+      try {
+        const result =
+          await partyRepository.getBalancePage(
+            currentShopId,
+            partyType,
+            {
+              query: queryRef.current,
+              limit: PAGE_SIZE,
+              offset,
+            }
+          );
+
+        if (
+          !mountedRef.current ||
+          requestId !== requestIdRef.current
+        ) {
+          return;
+        }
+
+        applyPage(result, true);
+      } catch (cause) {
+        if (
+          mountedRef.current &&
+          requestId === requestIdRef.current
+        ) {
+          console.error(
+            '[usePartyList] Load more failed:',
+            cause
+          );
+
+          setError(
+            errorMessage(
+              cause,
+              'Could not load more parties'
+            )
+          );
+        }
+      } finally {
+        loadingMoreRef.current = false;
+
+        if (mountedRef.current) {
+          setLoadingMore(false);
+        }
+      }
+    },
+    [partyType, applyPage]
   );
 
   useEffect(() => {
+    mountedRef.current = true;
     let cancelled = false;
 
     async function initialize() {
       setLoading(true);
       setError(null);
       setParties([]);
+
       setShopId(null);
+      shopIdRef.current = null;
+
+      offsetRef.current = 0;
+      hasMoreRef.current = false;
+      setHasMore(false);
 
       try {
-        const shop =
-          await shopRepository.getFirst();
+        const shop = await shopRepository.getFirst();
 
         if (!shop) {
           throw new Error(
@@ -99,9 +257,10 @@ export function usePartyList(partyType: PartyType) {
           return;
         }
 
+        shopIdRef.current = shop.id;
         setShopId(shop.id);
 
-        await loadParties(
+        await loadFirstPage(
           shop.id,
           queryRef.current
         );
@@ -110,17 +269,17 @@ export function usePartyList(partyType: PartyType) {
           return;
         }
 
-        const message =
-          cause instanceof Error
-            ? cause.message
-            : 'Could not load parties';
-
         console.error(
           '[usePartyList] Initialization failed:',
           cause
         );
 
-        setError(message);
+        setError(
+          errorMessage(
+            cause,
+            'Could not load parties'
+          )
+        );
       } finally {
         if (!cancelled) {
           setLoading(false);
@@ -132,32 +291,47 @@ export function usePartyList(partyType: PartyType) {
 
     return () => {
       cancelled = true;
+      mountedRef.current = false;
       requestIdRef.current += 1;
+      cancelSearch();
     };
-  }, [loadParties]);
+  }, [loadFirstPage, cancelSearch]);
 
   useFocusEffect(
     useCallback(() => {
-      if (!shopId || loading) {
+      /*
+       * Initialization already loads page one.
+       * Skip the first focus event.
+       */
+      if (firstLoadRef.current) {
+        firstLoadRef.current = false;
         return;
       }
 
-      void loadParties(
-        shopId,
+      const currentShopId = shopIdRef.current;
+
+      if (!currentShopId) {
+        return;
+      }
+
+      cancelSearch();
+
+      void loadFirstPage(
+        currentShopId,
         queryRef.current
       ).catch((cause) => {
-        console.error(
-          '[usePartyList] Focus refresh failed:',
-          cause
-        );
+        if (!mountedRef.current) {
+          return;
+        }
 
         setError(
-          cause instanceof Error
-            ? cause.message
-            : 'Could not refresh parties'
+          errorMessage(
+            cause,
+            'Could not refresh parties'
+          )
         );
       });
-    }, [shopId, loading, loadParties])
+    }, [loadFirstPage, cancelSearch])
   );
 
   const handleSearch = useCallback(
@@ -165,59 +339,101 @@ export function usePartyList(partyType: PartyType) {
       setQuery(value);
       queryRef.current = value;
 
-      if (!shopId) {
+      cancelSearch();
+
+      /*
+       * Invalidate outstanding page requests as
+       * soon as the search text changes.
+       */
+      requestIdRef.current += 1;
+      hasMoreRef.current = false;
+      setHasMore(false);
+
+      const currentShopId = shopIdRef.current;
+
+      if (!currentShopId) {
         return;
       }
 
-      void loadParties(shopId, value).catch(
-        (cause) => {
-          console.error(
-            '[usePartyList] Search failed:',
-            cause
-          );
+      searchTimerRef.current = setTimeout(() => {
+        searchTimerRef.current = null;
+
+        void loadFirstPage(
+          currentShopId,
+          value
+        ).catch((cause) => {
+          if (!mountedRef.current) {
+            return;
+          }
 
           setError(
-            cause instanceof Error
-              ? cause.message
-              : 'Could not search parties'
+            errorMessage(
+              cause,
+              'Could not search parties'
+            )
           );
-        }
-      );
+        });
+      }, SEARCH_DELAY_MS);
     },
-    [shopId, loadParties]
+    [cancelSearch, loadFirstPage]
   );
 
   const refresh = useCallback(async () => {
-    if (!shopId || refreshing) {
+    const currentShopId = shopIdRef.current;
+
+    if (
+      !currentShopId ||
+      refreshingRef.current
+    ) {
       return;
     }
 
+    cancelSearch();
+
+    refreshingRef.current = true;
     setRefreshing(true);
 
     try {
-      await loadParties(
-        shopId,
+      await loadFirstPage(
+        currentShopId,
         queryRef.current
       );
     } catch (cause) {
-      setError(
-        cause instanceof Error
-          ? cause.message
-          : 'Could not refresh parties'
-      );
+      if (mountedRef.current) {
+        setError(
+          errorMessage(
+            cause,
+            'Could not refresh parties'
+          )
+        );
+      }
     } finally {
-      setRefreshing(false);
+      refreshingRef.current = false;
+
+      if (mountedRef.current) {
+        setRefreshing(false);
+      }
     }
-  }, [shopId, refreshing, loadParties]);
+  }, [cancelSearch, loadFirstPage]);
 
   return {
     shopId,
     parties,
     query,
+
     loading,
     refreshing,
+    loadingMore,
+    hasMore,
+
+    totalCount,
+    totalOutstanding,
+    pageSize: PAGE_SIZE,
+
     error,
+
     handleSearch,
     refresh,
+    loadMore: loadNextPage,
   };
 }
