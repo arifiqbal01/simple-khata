@@ -2,6 +2,7 @@
 import React, {
   useCallback,
   useEffect,
+  useMemo,
   useState,
 } from 'react';
 
@@ -15,8 +16,13 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { router, useFocusEffect } from 'expo-router';
 
+import { AppHeader } from '@/components/layout';
+
 import {
   AppText,
+  Button,
+  EmptyState,
+  Screen,
   SearchField,
 } from '@/components/ui';
 
@@ -28,18 +34,16 @@ import {
 import { useItems } from '@/hooks/item/useItems';
 import { useShopIdentity } from '@/hooks/shop/useShopIdentity';
 
+const SEARCH_DEBOUNCE_MS = 250;
+
 export default function ItemsScreen() {
-  /*
-   * Search input is owned by the screen.
-   * Database search is debounced.
-   */
   const [query, setQuery] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
 
   useEffect(() => {
     const timeout = setTimeout(() => {
       setSearchQuery(query.trim());
-    }, 250);
+    }, SEARCH_DEBOUNCE_MS);
 
     return () => clearTimeout(timeout);
   }, [query]);
@@ -65,9 +69,6 @@ export default function ItemsScreen() {
     query: searchQuery,
   });
 
-  /*
-   * Refresh when returning from add/edit/delete.
-   */
   useFocusEffect(
     useCallback(() => {
       if (shopId) {
@@ -97,15 +98,17 @@ export default function ItemsScreen() {
 
   const handleLoadMore = useCallback(() => {
     if (
-      !identityLoading &&
-      shopId &&
-      !loading &&
-      !loadingMore &&
-      !refreshing &&
-      hasMore
+      identityLoading ||
+      !shopId ||
+      loading ||
+      loadingMore ||
+      refreshing ||
+      !hasMore
     ) {
-      void loadMore();
+      return;
     }
+
+    void loadMore();
   }, [
     identityLoading,
     shopId,
@@ -116,149 +119,125 @@ export default function ItemsScreen() {
     loadMore,
   ]);
 
-  /*
-   * Prevent search results from briefly showing
-   * the previous query's products.
-   */
   const searchPending =
     query.trim() !== searchQuery;
 
-const visibleItems = (searchPending ? [] : items).map(
-  (item) => ({
-    ...item,
-    default_unit: item.default_unit ?? null,
-    default_selling_price:
-      item.default_selling_price ?? null,
-  })
-);
+  const visibleItems = useMemo(() => {
+    if (searchPending) {
+      return [];
+    }
+
+    return items.map((item) => ({
+      ...item,
+      default_unit: item.default_unit ?? null,
+      default_selling_price:
+        item.default_selling_price ?? null,
+    }));
+  }, [items, searchPending]);
+
+  const initialLoading =
+    loading && visibleItems.length === 0;
 
   if (identityLoading) {
     return (
-      <View className="flex-1 items-center justify-center bg-background">
-        <ActivityIndicator
-          size="small"
-          color="#242422"
-        />
-      </View>
+      <Screen>
+        <AppHeader title="Items" />
+
+        <View className="flex-1 items-center justify-center">
+          <ActivityIndicator
+            size="large"
+            color="#242422"
+          />
+        </View>
+      </Screen>
     );
   }
 
   if (!shopId) {
     return (
-      <View className="flex-1 items-center justify-center bg-background px-5">
-        <Ionicons
-          name="storefront-outline"
-          size={38}
-          color="#9A9A93"
-        />
+      <Screen>
+        <AppHeader title="Items" />
 
-        <AppText className="mt-4 text-center font-spline-semibold text-[17px] text-foreground">
-          Shop Unavailable
-        </AppText>
+        <View className="flex-1 items-center justify-center px-5">
+          <Ionicons
+            name="storefront-outline"
+            size={38}
+            color="#9A9A93"
+          />
 
-        <AppText className="mt-2 text-center text-[13px] text-muted">
-          {identityError ??
-            'Could not load your shop identity.'}
-        </AppText>
-
-        <Pressable
-          onPress={() => {
-            void reloadIdentity();
-          }}
-          accessibilityRole="button"
-          className="mt-5 rounded-xl bg-chip px-6 py-3"
-        >
-          <AppText className="font-spline-semibold text-foreground">
-            Try Again
+          <AppText className="mt-4 text-center font-spline-semibold text-[17px] text-foreground">
+            Shop Unavailable
           </AppText>
-        </Pressable>
-      </View>
+
+          <AppText className="mt-2 text-center text-[13px] text-muted">
+            {identityError ??
+              'Could not load your shop identity.'}
+          </AppText>
+
+          <Pressable
+            onPress={() => {
+              void reloadIdentity();
+            }}
+            accessibilityRole="button"
+            className="mt-5 rounded-xl bg-chip px-6 py-3"
+          >
+            <AppText className="font-spline-semibold text-foreground">
+              Try Again
+            </AppText>
+          </Pressable>
+        </View>
+      </Screen>
     );
   }
 
-  const initialLoading =
-    loading && visibleItems.length === 0;
-
   return (
-    <View className="flex-1 bg-background">
+    <Screen>
+      <AppHeader title="Items" />
+
+      <View className="mb-4">
+        <SearchField
+          value={query}
+          onChangeText={setQuery}
+          placeholder="Search items"
+        />
+      </View>
+
+      {error && !searchPending ? (
+        <View className="mb-4 rounded-control bg-udhaar-soft px-4 py-3">
+          <AppText
+            variant="small"
+            className="text-udhaar"
+          >
+            {error}
+          </AppText>
+        </View>
+      ) : null}
+
       <ItemList
         items={visibleItems}
         onOpenItem={handleOpenItem}
         contentContainerStyle={{
-          paddingHorizontal: 20,
-          paddingBottom: 32,
+          paddingBottom: 16,
           flexGrow: 1,
         }}
         ListHeaderComponent={
-          <View className="pb-5 pt-5">
-            <View className="mb-5 flex-row items-center justify-between">
-              <AppText className="font-spline-bold text-[25px] text-foreground">
-                Items
-              </AppText>
-
-              <Pressable
-                onPress={handleAddItem}
-                accessibilityRole="button"
-                accessibilityLabel="Add new item"
-                hitSlop={10}
-                className="
-                  h-10
-                  w-10
-                  items-center
-                  justify-center
-                  rounded-full
-                  bg-chip
-                  active:opacity-70
-                "
-              >
-                <Ionicons
-                  name="add"
-                  size={23}
-                  color="#242422"
-                />
-              </Pressable>
-            </View>
-
+          <View className="mb-3">
             <ItemSummary
               totalItems={items.length}
               loading={initialLoading}
             />
 
-            <View className="mt-5">
-              <SearchField
-                value={query}
-                onChangeText={setQuery}
-                placeholder="Search items"
-              />
-            </View>
-
-            <View className="mt-6 flex-row items-center justify-between">
-              <AppText className="font-spline-semibold text-[18px] text-foreground">
-                All Items
+            <View className="mt-5 flex-row items-center justify-between px-1">
+              <AppText className="font-spline-medium text-[12px] text-muted">
+                {query.trim()
+                  ? 'Search results'
+                  : 'Recently added items'}
               </AppText>
 
               <AppText className="text-[12px] text-muted">
-                {visibleItems.length} shown
+                {visibleItems.length} loaded
               </AppText>
             </View>
-
-            {error && !searchPending ? (
-              <View className="mt-3">
-                <AppText className="text-[13px] text-red-600">
-                  {error}
-                </AppText>
-
-                <Pressable
-                  onPress={handleRefresh}
-                  accessibilityRole="button"
-                  className="mt-2 self-start"
-                >
-                  <AppText className="font-spline-semibold text-[13px] text-foreground">
-                    Try Again
-                  </AppText>
-                </Pressable>
-              </View>
-            ) : null}
           </View>
         }
         ListEmptyComponent={
@@ -270,29 +249,27 @@ const visibleItems = (searchPending ? [] : items).map(
               />
             </View>
           ) : error ? null : (
-            <View className="items-center py-12">
-              <Ionicons
-                name="cube-outline"
-                size={36}
-                color="#9A9A93"
-              />
-
-              <AppText className="mt-3 font-spline-semibold text-[16px] text-foreground">
-                {query.trim()
+            <EmptyState
+              icon={
+                query.trim()
+                  ? 'search-outline'
+                  : 'cube-outline'
+              }
+              title={
+                query.trim()
                   ? 'No matching items'
-                  : 'No items yet'}
-              </AppText>
-
-              <AppText className="mt-2 text-center text-[13px] text-muted">
-                {query.trim()
+                  : 'No items yet'
+              }
+              description={
+                query.trim()
                   ? 'Try another search term.'
-                  : 'Add your first item to the catalog.'}
-              </AppText>
-            </View>
+                  : 'Add your first item to the catalog.'
+              }
+            />
           )
         }
         ListFooterComponent={
-          loadingMore ? (
+          loadingMore && !searchPending ? (
             <View className="items-center py-5">
               <ActivityIndicator
                 size="small"
@@ -311,6 +288,20 @@ const visibleItems = (searchPending ? [] : items).map(
         onEndReached={handleLoadMore}
         onEndReachedThreshold={0.3}
       />
-    </View>
+
+      <View className="pt-3">
+        <Button
+          label="Add Item"
+          onPress={handleAddItem}
+          left={
+            <Ionicons
+              name="add"
+              size={21}
+              color="#FFFFFF"
+            />
+          }
+        />
+      </View>
+    </Screen>
   );
 }

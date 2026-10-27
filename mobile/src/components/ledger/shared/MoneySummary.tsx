@@ -8,6 +8,7 @@ export interface MoneySummaryProps {
   toPay?: number;
   moneyOut?: number;
   moneyIn?: number;
+  amountsVisible?: boolean;
 }
 
 export function MoneySummary({
@@ -15,24 +16,32 @@ export function MoneySummary({
   toPay,
   moneyOut = 0,
   moneyIn = 0,
+  amountsVisible = true,
 }: MoneySummaryProps) {
   const isPartySummary =
-    toReceive !== undefined || toPay !== undefined;
+    toReceive !== undefined ||
+    toPay !== undefined;
 
   return (
     <View className="flex-row gap-3">
       <MoneySummaryCard
         type={isPartySummary ? 'receive' : 'out'}
         amount={
-          isPartySummary ? (toReceive ?? 0) : moneyOut
+          isPartySummary
+            ? (toReceive ?? 0)
+            : moneyOut
         }
+        amountsVisible={amountsVisible}
       />
 
       <MoneySummaryCard
         type={isPartySummary ? 'pay' : 'in'}
         amount={
-          isPartySummary ? (toPay ?? 0) : moneyIn
+          isPartySummary
+            ? (toPay ?? 0)
+            : moneyIn
         }
+        amountsVisible={amountsVisible}
       />
     </View>
   );

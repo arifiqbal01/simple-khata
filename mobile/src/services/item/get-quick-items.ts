@@ -8,7 +8,6 @@ import type {
 } from '@/repositories/item/quick-items';
 
 import {
-  DEFAULT_QUICK_ITEMS,
   QUICK_ITEMS_VISIBLE_LIMIT,
 } from '@/config/quick-items';
 
@@ -60,17 +59,16 @@ function daysAgo(
 }
 
 function toQuickItem(
-  item: Item | undefined,
-  fallbackName: string,
+  item: Item,
   score: number
 ): QuickItem {
   return {
-    id: item?.id ?? null,
-    name: item?.name ?? fallbackName,
+    id: item.id,
+    name: item.name,
     score,
-    defaultUnit: item?.default_unit ?? null,
+    defaultUnit: item.default_unit ?? null,
     defaultSellingPrice:
-      item?.default_selling_price ?? null,
+      item.default_selling_price ?? null,
   };
 }
 
@@ -105,6 +103,15 @@ export class GetQuickItemsService {
     const [startHour, endHour] =
       getTimeWindow(now.getHours());
 
+    /*
+     * Read actual item usage history.
+     *
+     * Preserve existing scoring inputs:
+     * - Customer-specific frequency
+     * - Time-of-day frequency
+     * - Overall frequency
+     * - Recent usage windows
+     */
     const usage = await this.repository.getUsage({
       shopId,
       customerId,
@@ -117,26 +124,37 @@ export class GetQuickItemsService {
     });
 
     /*
-     * Collect product IDs and names from usage
-     * history and starter Quick Items.
+     * No usage history means no suggestions.
+     * Never fall back to predefined item names.
      */
-    const usageIds = usage
-      .map((record) => record.itemId)
-      .filter(
-        (id): id is string =>
-          typeof id === 'string' &&
-          id.trim().length > 0
-      );
+    if (usage.length === 0) {
+      return [];
+    }
 
-    const names = [
-      ...usage.map((record) => record.name),
-      ...DEFAULT_QUICK_ITEMS,
+    const usageIds = [
+      ...new Set(
+        usage
+          .map((record) => record.itemId)
+          .filter(
+            (id): id is string =>
+              typeof id === 'string' &&
+              id.trim().length > 0
+          )
+      ),
+    ];
+
+    const usageNames = [
+      ...new Set(
+        usage
+          .map((record) => record.name.trim())
+          .filter((name) => name.length > 0)
+      ),
     ];
 
     /*
-     * Fetch from the entire SQLite catalog.
-     * These queries are not restricted by the
-     * first 100 products loaded by the UI.
+     * Resolve historically used items from
+     * the entire SQLite catalog, not just
+     * the first page loaded by the screen.
      */
     const [
       itemsById,
@@ -148,12 +166,12 @@ export class GetQuickItemsService {
       ),
       this.itemRepository.getManyByNames(
         shopId,
-        names
+        usageNames
       ),
     ]);
 
     /*
-     * Merge all resolved catalog records.
+     * Merge catalog records.
      * availableItems is only a supplemental cache.
      */
     const activeItems = [
@@ -181,12 +199,14 @@ export class GetQuickItemsService {
     const ranked = new Map<string, QuickItem>();
 
     /*
-     * Preserve historical usage ranking.
+     * Only include items backed by actual
+     * historical usage AND an active catalog
+     * record.
      */
     for (const record of usage) {
-      const key = normalize(record.name);
+      const nameKey = normalize(record.name);
 
-      if (!key) {
+      if (!nameKey) {
         continue;
       }
 
@@ -194,64 +214,41 @@ export class GetQuickItemsService {
         (record.itemId
           ? catalogById.get(record.itemId)
           : undefined) ??
-        catalogByName.get(key);
+        catalogByName.get(nameKey);
+
+      if (!catalogItem) {
+        continue;
+      }
 
       const score =
         record.customerCount * 5 +
         record.timeCount * 3 +
         record.totalCount * 2;
 
+      if (
+        !Number.isFinite(score) ||
+        score <= 0
+      ) {
+        continue;
+      }
+
       const quickItem = toQuickItem(
         catalogItem,
-        record.name,
         score
       );
 
-      const resolvedKey = normalize(
-        quickItem.name
-      );
-
-      const existing = ranked.get(resolvedKey);
+      /*
+       * Deduplicate by actual catalog ID.
+       * Preserve the highest-ranked usage record.
+       */
+      const existing = ranked.get(catalogItem.id);
 
       if (
         !existing ||
         quickItem.score > existing.score
       ) {
-        ranked.set(resolvedKey, quickItem);
-      }
-    }
-
-    /*
-     * Add starter suggestions not already
-     * represented in historical usage.
-     */
-    for (
-      const [index, name] of
-      DEFAULT_QUICK_ITEMS.entries()
-    ) {
-      const key = normalize(name);
-
-      if (!key) {
-        continue;
-      }
-
-      const catalogItem =
-        catalogByName.get(key);
-
-      const quickItem = toQuickItem(
-        catalogItem,
-        name,
-        (DEFAULT_QUICK_ITEMS.length - index) *
-          0.01
-      );
-
-      const resolvedKey = normalize(
-        quickItem.name
-      );
-
-      if (!ranked.has(resolvedKey)) {
         ranked.set(
-          resolvedKey,
+          catalogItem.id,
           quickItem
         );
       }
@@ -265,7 +262,7 @@ export class GetQuickItemsService {
       )
       .slice(
         0,
-        QUICK_ITEMS_VISIBLE_LIMIT
+        Math.min(5, QUICK_ITEMS_VISIBLE_LIMIT)
       );
   }
 }

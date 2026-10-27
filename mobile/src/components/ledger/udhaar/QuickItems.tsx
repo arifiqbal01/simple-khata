@@ -4,10 +4,6 @@ import { View } from 'react-native';
 
 import { AppText, Chip } from '@/components/ui';
 
-import {
-  QUICK_ITEMS_VISIBLE_LIMIT,
-} from '@/config/quick-items';
-
 import type {
   QuickItem,
 } from '@/services/item/get-quick-items';
@@ -17,6 +13,8 @@ interface QuickItemsProps {
   selectedNames: string[];
   onToggle: (item: QuickItem) => void;
 }
+
+const QUICK_ITEMS_LIMIT = 5;
 
 function normalize(name: string): string {
   return name.trim().toLocaleLowerCase();
@@ -32,27 +30,60 @@ export const QuickItems = memo(function QuickItems({
     [selectedNames]
   );
 
-  const visibleItems = useMemo(
-    () => items.slice(0, QUICK_ITEMS_VISIBLE_LIMIT),
-    [items]
-  );
+  /*
+   * The service must supply actual usage-ranked
+   * catalog items, not predefined starter items.
+   *
+   * Hide already-selected items and avoid
+   * duplicate names.
+   */
+  const visibleItems = useMemo(() => {
+    const seen = new Set<string>();
+    const result: QuickItem[] = [];
 
-  if (visibleItems.length === 0) return null;
+    for (const item of items) {
+      const normalized = normalize(item.name);
+
+      if (
+        !normalized ||
+        selectedSet.has(normalized) ||
+        seen.has(normalized)
+      ) {
+        continue;
+      }
+
+      // A real catalog item must have an ID.
+      if (!item.id) {
+        continue;
+      }
+
+      seen.add(normalized);
+      result.push(item);
+
+      if (result.length >= QUICK_ITEMS_LIMIT) {
+        break;
+      }
+    }
+
+    return result;
+  }, [items, selectedSet]);
+
+  if (visibleItems.length === 0) {
+    return null;
+  }
 
   return (
-    <View className="mt-5">
+    <View className="mt-4">
       <AppText className="mb-3 font-spline-medium text-[13px] text-muted">
-        Quick items
+        Most used items
       </AppText>
 
       <View className="flex-row flex-wrap gap-2">
         {visibleItems.map((item) => (
           <Chip
-            key={item.id ?? normalize(item.name)}
+            key={item.id!}
             label={item.name}
-            selected={selectedSet.has(
-              normalize(item.name)
-            )}
+            selected={false}
             onPress={() => onToggle(item)}
           />
         ))}

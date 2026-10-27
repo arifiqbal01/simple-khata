@@ -31,9 +31,13 @@ export default function CustomersScreen() {
     query,
     loading,
     refreshing,
+    loadingMore,
+    hasMore,
+    totalCount,
     error,
     handleSearch,
     refresh,
+    loadMore,
   } = usePartyList('CUSTOMER');
 
   const {
@@ -95,6 +99,25 @@ export default function CustomersScreen() {
     });
   }, []);
 
+  const handleLoadMore = useCallback(() => {
+    if (
+      loading ||
+      refreshing ||
+      loadingMore ||
+      !hasMore
+    ) {
+      return;
+    }
+
+    void loadMore();
+  }, [
+    loading,
+    refreshing,
+    loadingMore,
+    hasMore,
+    loadMore,
+  ]);
+
   const isSearching = query.trim().length > 0;
 
   if (loading || identityLoading) {
@@ -103,7 +126,10 @@ export default function CustomersScreen() {
         <AppHeader title="Customers" />
 
         <View className="flex-1 items-center justify-center">
-          <ActivityIndicator size="large" />
+          <ActivityIndicator
+            size="large"
+            color="#242422"
+          />
         </View>
       </Screen>
     );
@@ -138,9 +164,33 @@ export default function CustomersScreen() {
         deletingPartyId={deletingPartyId}
         onDeleteParty={confirmDeleteParty}
         refreshing={refreshing}
-        onRefresh={refresh}
+        onRefresh={() => {
+          void refresh();
+        }}
         onQuickTransaction={handleQuickUdhaar}
         onOpenParty={handleOpenCustomer}
+        onEndReached={handleLoadMore}
+        onEndReachedThreshold={0.4}
+        contentContainerClassName={
+          parties.length === 0
+            ? 'flex-grow pb-4'
+            : 'pb-4'
+        }
+        ListHeaderComponent={
+          parties.length > 0 ? (
+            <View className="mb-3 flex-row items-center justify-between px-1">
+              <AppText className="font-spline-medium text-[12px] text-muted">
+                {isSearching
+                  ? 'Search results'
+                  : 'Recently active customers'}
+              </AppText>
+
+              <AppText className="text-[12px] text-muted">
+                {parties.length} of {totalCount}
+              </AppText>
+            </View>
+          ) : null
+        }
         ListEmptyComponent={
           <EmptyState
             icon={
@@ -159,6 +209,16 @@ export default function CustomersScreen() {
                 : 'Add your first customer to start recording udhaar and payments.'
             }
           />
+        }
+        ListFooterComponent={
+          loadingMore ? (
+            <View className="items-center py-5">
+              <ActivityIndicator
+                size="small"
+                color="#242422"
+              />
+            </View>
+          ) : null
         }
       />
 

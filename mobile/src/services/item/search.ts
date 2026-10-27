@@ -28,7 +28,7 @@ export class SearchItemsService {
     }
 
     if (
-      !Number.isInteger(limit) ||
+      !Number.isSafeInteger(limit) ||
       limit < 1 ||
       limit > 100
     ) {
@@ -38,7 +38,7 @@ export class SearchItemsService {
     }
 
     if (
-      !Number.isInteger(offset) ||
+      !Number.isSafeInteger(offset) ||
       offset < 0
     ) {
       throw new Error(
@@ -46,6 +46,14 @@ export class SearchItemsService {
       );
     }
 
+    /*
+     * Empty queries retain the existing
+     * catalog browsing behavior.
+     *
+     * The Udhaar bottom sheet handles
+     * empty queries separately by showing
+     * genuinely most-used items.
+     */
     if (!query) {
       return this.itemRepository.listByShop(
         shopId,
@@ -54,6 +62,13 @@ export class SearchItemsService {
       );
     }
 
+    /*
+     * Search the full shop catalog in SQLite.
+     *
+     * Exact / prefix / substring ranking
+     * must be implemented in the repository
+     * before LIMIT and OFFSET are applied.
+     */
     return this.itemRepository.search(
       shopId,
       query,

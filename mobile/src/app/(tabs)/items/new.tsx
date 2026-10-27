@@ -9,6 +9,7 @@ import {
 
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { AppText } from '@/components/ui';
 import { ItemForm } from '@/components/item';
@@ -37,7 +38,12 @@ export default function NewItemScreen() {
   });
 
   const handleSubmit = useCallback(async () => {
-    if (identityLoading || !shopId || !deviceId || saving) {
+    if (
+      identityLoading ||
+      !shopId ||
+      !deviceId ||
+      saving
+    ) {
       return;
     }
 
@@ -56,18 +62,24 @@ export default function NewItemScreen() {
 
   if (identityLoading) {
     return (
-      <View className="flex-1 items-center justify-center bg-background">
+      <SafeAreaView
+        edges={['top']}
+        className="flex-1 items-center justify-center bg-background"
+      >
         <ActivityIndicator
           size="small"
           color="#242422"
         />
-      </View>
+      </SafeAreaView>
     );
   }
 
   if (!shopId || !deviceId) {
     return (
-      <View className="flex-1 items-center justify-center bg-background px-5">
+      <SafeAreaView
+        edges={['top']}
+        className="flex-1 items-center justify-center bg-background px-5"
+      >
         <Ionicons
           name="storefront-outline"
           size={38}
@@ -84,7 +96,9 @@ export default function NewItemScreen() {
         </AppText>
 
         <Pressable
-          onPress={() => void reloadIdentity()}
+          onPress={() => {
+            void reloadIdentity();
+          }}
           accessibilityRole="button"
           className="mt-5 rounded-xl bg-chip px-6 py-3"
         >
@@ -92,12 +106,15 @@ export default function NewItemScreen() {
             Try Again
           </AppText>
         </Pressable>
-      </View>
+      </SafeAreaView>
     );
   }
 
   return (
-    <View className="flex-1 bg-background">
+    <SafeAreaView
+      edges={['top']}
+      className="flex-1 bg-background"
+    >
       <ItemForm
         values={values}
         onChange={onChange}
@@ -108,6 +125,6 @@ export default function NewItemScreen() {
         mode="create"
         error={error}
       />
-    </View>
+    </SafeAreaView>
   );
 }

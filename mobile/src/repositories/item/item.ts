@@ -1,4 +1,3 @@
-
 import { getDatabase } from '@/db/database';
 import type { SQLiteDatabase } from 'expo-sqlite';
 import type { Item } from '@/types/domain';
@@ -258,8 +257,8 @@ export class ItemRepository {
         WHERE shop_id = ?
           AND deleted_at IS NULL
         ORDER BY
-          name COLLATE NOCASE ASC,
-          id ASC
+          created_at DESC,
+          id DESC
         LIMIT ?
         OFFSET ?
       `,
@@ -527,8 +526,61 @@ async countByShop(shopId: string): Promise<number> {
     limit = 50,
     offset = 0
   ): Promise<Item[]> {
+    const normalizedShopId = shopId.trim();
+    const normalizedQuery = query.trim();
+
+    if (!normalizedShopId) {
+      throw new Error('Shop ID is required');
+    }
+
+    if (
+      !Number.isSafeInteger(limit) ||
+      limit < 1 ||
+      limit > 100
+    ) {
+      throw new Error(
+        'Limit must be between 1 and 100'
+      );
+    }
+
+    if (
+      !Number.isSafeInteger(offset) ||
+      offset < 0
+    ) {
+      throw new Error(
+        'Offset cannot be negative'
+      );
+    }
+
+    /*
+     * Preserve catalog browsing for callers
+     * that pass an empty search query.
+     */
+    if (!normalizedQuery) {
+      return this.listByShop(
+        normalizedShopId,
+        limit,
+        offset
+      );
+    }
+
+    /*
+     * Escape SQL LIKE wildcards so the
+     * user's search is treated literally.
+     *
+     * The backslash is the escape character:
+     *   %  -> \%
+     *   _  -> \_
+     *   \  -> \\
+     */
+    const escapedQuery = normalizedQuery.replace(
+      /[\\%_]/g,
+      '\\$&'
+    );
+
+    const containsPattern = `%${escapedQuery}%`;
+
     const db = await getDatabase();
-    const pattern = `%${query.trim()}%`;
 
     return db.getAllAsync<Item>(
       `
@@ -536,15 +588,15 @@ async countByShop(shopId: string): Promise<number> {
         FROM items
         WHERE shop_id = ?
           AND deleted_at IS NULL
-          AND name LIKE ? COLLATE NOCASE
+          AND TRIM(name) LIKE ? ESCAPE '\\'
         ORDER BY
-          name COLLATE NOCASE ASC,
-          id ASC
+          created_at DESC,
+          id DESC
         LIMIT ?
         OFFSET ?
       `,
-      shopId,
-      pattern,
+      normalizedShopId,
+      containsPattern,
       limit,
       offset
     );

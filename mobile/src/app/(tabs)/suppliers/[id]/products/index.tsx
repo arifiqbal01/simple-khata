@@ -6,7 +6,6 @@ import React, {
 
 import {
   ActivityIndicator,
-  Pressable,
   View,
 } from 'react-native';
 
@@ -22,6 +21,7 @@ import { AppHeader } from '@/components/layout';
 
 import {
   AppText,
+  Button,
   Screen,
 } from '@/components/ui';
 
@@ -209,28 +209,21 @@ export default function SupplierProductsScreen() {
         ) : null}
       </View>
 
-      {/* Fixed bottom Add Product button */}
+      {/* Fixed bottom Add Item button */}
       <View className="border-t border-border bg-background px-5 pb-5 pt-3">
-        <Pressable
+        <Button
+          label="Add Item"
+          variant="primary"
           onPress={handleAddProduct}
           disabled={!supplierId || !party}
-          accessibilityRole="button"
-          accessibilityLabel="Add Product"
-          accessibilityState={{
-            disabled: !supplierId || !party,
-          }}
-          className="min-h-[54px] flex-row items-center justify-center rounded-[14px] bg-foreground active:opacity-80"
-        >
-          <Ionicons
-            name="add"
-            size={22}
-            color="#FFFFFF"
-          />
-
-          <AppText className="ml-2 font-spline-semibold text-[16px] text-background">
-            Add Product
-          </AppText>
-        </Pressable>
+          left={
+            <Ionicons
+              name="add"
+              size={21}
+              color="#FFFFFF"
+            />
+          }
+        />
       </View>
     </Screen>
   );
