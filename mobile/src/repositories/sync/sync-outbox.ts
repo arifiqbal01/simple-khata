@@ -243,6 +243,64 @@ async enqueueWithDatabase(
     return (row?.count ?? 0) > 0;
   }
 
+  async diagnoseQuantityPrecision(): Promise<void> {
+  const db = await getDatabase();
+
+  const rows = await db.getAllAsync<{
+    payload: string;
+  }>(`
+    SELECT payload
+    FROM sync_outbox
+    WHERE operation_type = 'LEDGER_ENTRY_CREATE'
+    ORDER BY rowid ASC
+  `);
+
+  let invalidCount = 0;
+  let inspectedCount = 0;
+
+  for (const row of rows) {
+    let payload: any;
+
+    try {
+      payload = JSON.parse(row.payload);
+    } catch {
+      continue;
+    }
+
+    if (!Array.isArray(payload?.items)) {
+      continue;
+    }
+
+    inspectedCount++;
+
+    for (const item of payload.items) {
+      if (
+        item.quantity === null ||
+        item.quantity === undefined
+      ) {
+        continue;
+      }
+
+      const quantity = String(item.quantity);
+      const decimalPart = quantity.split('.')[1] ?? '';
+
+      if (decimalPart.length > 3) {
+        invalidCount++;
+
+        console.log('[quantity-diagnostic]', {
+          quantity,
+          decimalPlaces: decimalPart.length,
+        });
+      }
+    }
+  }
+
+  console.log('[quantity-diagnostic] summary', {
+    inspectedOperations: inspectedCount,
+    invalidQuantities: invalidCount,
+  });
+}
+
   async repairLegacyPayloads(): Promise<number> {
     return repairLegacyOutboxPayloads();
   }
