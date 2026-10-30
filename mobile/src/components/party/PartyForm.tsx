@@ -1,22 +1,18 @@
 
-import React from 'react';
+import React, { useCallback } from 'react';
 
 import {
   Alert,
   Keyboard,
   KeyboardAvoidingView,
   Platform,
-  Pressable,
   ScrollView,
   View,
 } from 'react-native';
 
 import { router } from 'expo-router';
-import { Ionicons } from '@expo/vector-icons';
 
 import {
-  AppText,
-  Screen,
   SaveButton,
   TextField,
 } from '@/components/ui';
@@ -45,21 +41,14 @@ export function PartyForm({
 
   const isSupplier = partyType === 'SUPPLIER';
 
-  const title = isSupplier
-    ? 'New Supplier'
-    : 'New Customer';
-
   const listPath = isSupplier
     ? '/suppliers'
     : '/customer';
 
-  function handleClose(): void {
-    Keyboard.dismiss();
-    router.replace(listPath);
-  }
-
-  async function handleSave(): Promise<void> {
-    if (!canSave) return;
+  const handleSave = useCallback(async (): Promise<void> => {
+    if (!canSave || saving) {
+      return;
+    }
 
     Keyboard.dismiss();
 
@@ -67,13 +56,15 @@ export function PartyForm({
       const created = await save();
 
       if (created) {
-        handleClose();
+        router.replace(listPath);
       }
     } catch (error) {
       const message =
         error instanceof Error
           ? error.message
-          : `Could not add ${isSupplier ? 'supplier' : 'customer'}`;
+          : `Could not add ${
+              isSupplier ? 'supplier' : 'customer'
+            }`;
 
       console.error(
         '[PartyForm] Save failed:',
@@ -81,99 +72,84 @@ export function PartyForm({
       );
 
       Alert.alert(
-        `Could not add ${isSupplier ? 'supplier' : 'customer'}`,
+        `Could not add ${
+          isSupplier ? 'supplier' : 'customer'
+        }`,
         message
       );
     }
-  }
+  }, [
+    canSave,
+    saving,
+    save,
+    listPath,
+    isSupplier,
+  ]);
 
   return (
-    <Screen>
-      {/* Fixed header */}
-      <View className="flex-row items-center justify-between border-b border-border bg-background px-4 py-3">
-        <View className="flex-row items-center gap-3">
-          <Pressable
-            onPress={handleClose}
-            hitSlop={10}
-            accessibilityRole="button"
-            accessibilityLabel="Go back"
-            disabled={saving}
-            className="h-10 w-9 items-center justify-center"
-          >
-            <Ionicons
-              name="arrow-back"
-              size={23}
-              color="#181816"
-            />
-          </Pressable>
+    <KeyboardAvoidingView
+      className="flex-1"
+      behavior={
+        Platform.OS === 'ios'
+          ? 'padding'
+          : undefined
+      }
+    >
+      <ScrollView
+        className="flex-1"
+        contentContainerClassName="pb-8 pt-6"
+        keyboardShouldPersistTaps="handled"
+        keyboardDismissMode={
+          Platform.OS === 'ios'
+            ? 'interactive'
+            : 'on-drag'
+        }
+        showsVerticalScrollIndicator={false}
+      >
+        <View className="gap-6">
+          <TextField
+            label="Name"
+            value={name}
+            onChangeText={setName}
+            placeholder={
+              isSupplier
+                ? 'Supplier name'
+                : 'Customer name'
+            }
+            autoCapitalize="words"
+            autoCorrect={false}
+            autoFocus
+            returnKeyType="next"
+          />
 
-          <AppText className="font-spline-semibold text-[19px] text-foreground">
-            {title}
-          </AppText>
+          <TextField
+            label="Phone · Optional"
+            value={phone}
+            onChangeText={setPhone}
+            placeholder="0300 1234567"
+            keyboardType="phone-pad"
+            returnKeyType="done"
+            onSubmitEditing={() => {
+              if (canSave && !saving) {
+                void handleSave();
+              }
+            }}
+          />
         </View>
+      </ScrollView>
 
+      <View className="border-t border-border bg-background px-5 pb-4 pt-3">
         <SaveButton
           loading={saving}
-          disabled={!canSave}
-          accessibilityLabel={`Save ${isSupplier ? 'supplier' : 'customer'}`}
+          disabled={!canSave || saving}
+          accessibilityLabel={`Save ${
+            isSupplier ? 'supplier' : 'customer'
+          }`}
           onPress={() => {
             void handleSave();
           }}
         />
       </View>
-
-      {/* Scrollable form */}
-      <KeyboardAvoidingView
-        className="flex-1"
-        behavior={
-          Platform.OS === 'ios'
-            ? 'padding'
-            : undefined
-        }
-      >
-        <ScrollView
-          className="flex-1"
-          contentContainerClassName="pb-8 pt-6"
-          keyboardShouldPersistTaps="handled"
-          keyboardDismissMode={
-            Platform.OS === 'ios'
-              ? 'interactive'
-              : 'on-drag'
-          }
-          showsVerticalScrollIndicator={false}
-        >
-          <View className="gap-6">
-            <TextField
-              label="Name"
-              value={name}
-              onChangeText={setName}
-              placeholder={
-                isSupplier
-                  ? 'Supplier name'
-                  : 'Customer name'
-              }
-              autoCapitalize="words"
-              autoCorrect={false}
-              autoFocus
-              returnKeyType="next"
-            />
-
-            <TextField
-              label="Phone · Optional"
-              value={phone}
-              onChangeText={setPhone}
-              placeholder="0300 1234567"
-              keyboardType="phone-pad"
-              returnKeyType="done"
-              onSubmitEditing={() => {
-                if (canSave) {
-                  void handleSave();
-                }
-              }}
-            />
-          </View>
-        </ScrollView>
-      </KeyboardAvoidingView>
-    </Screen>
+    </KeyboardAvoidingView>
   );
 }

@@ -429,18 +429,21 @@ const handleOpenProducts = useCallback(() => {
         }
         ListHeaderComponent={
           <>
-            <PartyLedgerHeader
-              partyType="SUPPLIER"
-              balance={balance}
-              moneyOut={supplierSummary.totalPayments}
-              moneyIn={supplierSummary.totalSupply}
-              filter={filter}
-              onFilterChange={setFilter}
-              onAddTransaction={handleAddSupply}
-              onPayment={handlePayment}
-              onShareWhatsApp={handleShareWhatsApp}
-              isSharing={isSharing}
-            />
+
+                <PartyLedgerHeader
+                  partyType="SUPPLIER"
+                  hideSummaryTitle
+                  balance={balance}
+                  moneyOut={supplierSummary.totalSupply}
+                  moneyIn={supplierSummary.totalPayments}
+                  filter={filter}
+                  onFilterChange={setFilter}
+                  onAddTransaction={handleAddSupply}
+                  onPayment={handlePayment}
+                  onShareWhatsApp={handleShareWhatsApp}
+                  isSharing={isSharing}
+                />
+
 
             <SupplierProductsLink
               onPress={handleOpenProducts}

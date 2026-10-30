@@ -9,9 +9,14 @@ import {
 
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { AppText } from '@/components/ui';
+import { AppHeader } from '@/components/layout';
+
+import {
+  AppText,
+  Screen,
+} from '@/components/ui';
+
 import { ItemForm } from '@/components/item';
 
 import { useItemForm } from '@/hooks/item/useItemForm';
@@ -36,6 +41,10 @@ export default function NewItemScreen() {
     shopId: shopId ?? '',
     deviceId: deviceId ?? '',
   });
+
+  const handleBack = useCallback(() => {
+    router.back();
+  }, []);
 
   const handleSubmit = useCallback(async () => {
     if (
@@ -62,69 +71,72 @@ export default function NewItemScreen() {
 
   if (identityLoading) {
     return (
-      <SafeAreaView
-        edges={['top']}
-        className="flex-1 items-center justify-center bg-background"
-      >
-        <ActivityIndicator
-          size="small"
-          color="#242422"
-        />
-      </SafeAreaView>
+      <Screen>
+        <AppHeader title="Add Item" />
+
+        <View className="flex-1 items-center justify-center">
+          <ActivityIndicator
+            size="large"
+            color="#242422"
+          />
+        </View>
+      </Screen>
     );
   }
 
   if (!shopId || !deviceId) {
     return (
-      <SafeAreaView
-        edges={['top']}
-        className="flex-1 items-center justify-center bg-background px-5"
-      >
-        <Ionicons
-          name="storefront-outline"
-          size={38}
-          color="#9A9A93"
-        />
+      <Screen>
+        <AppHeader title="Add Item" />
 
-        <AppText className="mt-4 text-center font-spline-semibold text-[17px] text-foreground">
-          Shop Unavailable
-        </AppText>
+        <View className="flex-1 items-center justify-center px-5">
+          <Ionicons
+            name="storefront-outline"
+            size={38}
+            color="#9A9A93"
+          />
 
-        <AppText className="mt-2 text-center text-[13px] text-muted">
-          {identityError ??
-            'Shop or device identity is unavailable.'}
-        </AppText>
-
-        <Pressable
-          onPress={() => {
-            void reloadIdentity();
-          }}
-          accessibilityRole="button"
-          className="mt-5 rounded-xl bg-chip px-6 py-3"
-        >
-          <AppText className="font-spline-semibold text-foreground">
-            Try Again
+          <AppText className="mt-4 text-center font-spline-semibold text-[17px] text-foreground">
+            Shop Unavailable
           </AppText>
-        </Pressable>
-      </SafeAreaView>
+
+          <AppText className="mt-2 text-center text-[13px] text-muted">
+            {identityError ??
+              'Shop or device identity is unavailable.'}
+          </AppText>
+
+          <Pressable
+            onPress={() => {
+              void reloadIdentity();
+            }}
+            accessibilityRole="button"
+            className="mt-5 rounded-xl bg-chip px-6 py-3"
+          >
+            <AppText className="font-spline-semibold text-foreground">
+              Try Again
+            </AppText>
+          </Pressable>
+        </View>
+      </Screen>
     );
   }
 
   return (
-    <SafeAreaView
-      edges={['top']}
-      className="flex-1 bg-background"
-    >
-      <ItemForm
-        values={values}
-        onChange={onChange}
-        onSubmit={() => {
-          void handleSubmit();
-        }}
-        saving={saving}
-        mode="create"
-        error={error}
-      />
-    </SafeAreaView>
+    <Screen>
+      <AppHeader title="Add Item" />
+
+      <View className="flex-1">
+        <ItemForm
+          values={values}
+          onChange={onChange}
+          onSubmit={() => {
+            void handleSubmit();
+          }}
+          saving={saving}
+          mode="create"
+          error={error}
+        />
+      </View>
+    </Screen>
   );
 }

@@ -3,11 +3,10 @@ import React from 'react';
 import { View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 
-import { MoneySummary } from '@/components/ledger/shared';
+import { FinancialSummary } from '@/components/ledger/shared';
 import { TransactionFilters } from './TransactionFilters';
 
 import { AppText, Button } from '@/components/ui';
-import { formatRupees } from '@/utils/ledger/format-rupees';
 
 import type { TransactionFilterState } from './transaction-filter.types';
 
@@ -31,6 +30,7 @@ export interface PartyLedgerHeaderProps {
   onShareWhatsApp?: () => void;
 
   isSharing?: boolean;
+  hideSummaryTitle?: boolean;
 }
 
 export function PartyLedgerHeader({
@@ -44,6 +44,7 @@ export function PartyLedgerHeader({
   onPayment,
   onShareWhatsApp,
   isSharing = false,
+  hideSummaryTitle = false,
 }: PartyLedgerHeaderProps) {
   const isSupplier = partyType === 'SUPPLIER';
 
@@ -53,36 +54,33 @@ export function PartyLedgerHeader({
 
   return (
     <View>
-      {/* Outstanding balance */}
-      <View className="flex-row items-center justify-between gap-3 pt-5">
-        <AppText
-          numberOfLines={1}
-          className="shrink-0 font-spline-semibold text-[13px] uppercase leading-[18px] text-muted"
-        >
-          Outstanding
-        </AppText>
-
-        <View className="min-w-0 flex-1 flex-row items-baseline justify-end">
-          <AppText className="mr-1 shrink-0 font-spline-semibold text-[16px] text-muted">
-            Rs
-          </AppText>
-
-          <AppText
-            numberOfLines={1}
-            adjustsFontSizeToFit
-            minimumFontScale={0.65}
-            className="min-w-0 shrink font-spline-bold text-[37px] leading-[44px] text-foreground"
-          >
-            {formatRupees(balance)}
-          </AppText>
-        </View>
-      </View>
-
-      {/* Money summary */}
-      <View className="mt-4">
-        <MoneySummary
-          moneyOut={moneyOut}
-          moneyIn={moneyIn}
+      {/* Shared financial summary */}
+      <View className="pt-5">
+        <FinancialSummary
+          variant={isSupplier ? 'supplier' : 'customer'}
+          title={
+            hideSummaryTitle
+              ? ''
+              : isSupplier
+                ? 'SUPPLIER LEDGER'
+                : 'CUSTOMER LEDGER'
+          }
+          balanceLabel="Outstanding Balance"
+          balance={balance}
+          leftLabel={
+            isSupplier
+              ? 'Total Supply'
+              : 'Total Udhaar'
+          }
+          leftAmount={moneyOut}
+          leftDirection={
+            isSupplier ? 'pay' : 'receive'
+          }
+          rightLabel="Total Payments"
+          rightAmount={moneyIn}
+          rightDirection={
+            isSupplier ? 'receive' : 'pay'
+          }
         />
       </View>
 

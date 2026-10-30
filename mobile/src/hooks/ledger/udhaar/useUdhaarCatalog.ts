@@ -118,10 +118,15 @@ export function useUdhaarCatalog({
          * but catalog loading should not require it.
          */
         try {
+          if (!customerId?.trim()) {
+            setQuickItems([]);
+            return;
+          }
+
           const suggestions =
             await quickItemsService.execute({
               shopId: shopId!,
-              customerId,
+              customerId: customerId.trim(),
               availableItems: currentItems,
             });
 

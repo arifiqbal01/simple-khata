@@ -50,6 +50,11 @@ export interface PartyPageOptions {
   limit?: number;
   offset?: number;
 }
+export interface PartyFinancialTotals {
+  toReceive: number;
+  toPay: number;
+  netBalance: number;
+}
 
 const PARTY_COLUMNS = `
   id,
@@ -330,6 +335,74 @@ export class PartyRepository {
       parties,
     };
   }
+
+
+
+/**
+ * All-party financial totals.
+ * Independent of search and pagination.
+ * Read-only: does not modify ledger or sync data.
+ */
+async getFinancialTotals(
+  shopId: string,
+  type: PartyType
+): Promise<PartyFinancialTotals> {
+  validatePartyType(type);
+
+  const db = await getDatabase();
+
+  const result = await db.getFirstAsync<{
+    to_receive: number;
+    to_pay: number;
+  }>(
+    `SELECT
+       COALESCE(SUM(
+         CASE WHEN balances.balance < 0
+           THEN -balances.balance ELSE 0 END
+       ), 0) AS to_receive,
+       COALESCE(SUM(
+         CASE WHEN balances.balance > 0
+           THEN balances.balance ELSE 0 END
+       ), 0) AS to_pay
+     FROM (
+       SELECT
+         p.id,
+         COALESCE(SUM(
+           CASE
+             WHEN p.type = 'CUSTOMER'
+               AND le.type = 'UDHAAR'
+               THEN le.amount
+             WHEN p.type = 'SUPPLIER'
+               AND le.type = 'SUPPLY'
+               THEN le.amount
+             WHEN le.type = 'PAYMENT'
+               THEN -le.amount
+             ELSE 0
+           END
+         ), 0) AS balance
+       FROM parties AS p
+       LEFT JOIN ledger_entries AS le
+         ON le.party_id = p.id
+         AND le.deleted_at IS NULL
+       WHERE p.shop_id = ?
+         AND p.type = ?
+         AND p.deleted_at IS NULL
+       GROUP BY p.id
+     ) AS balances`,
+    shopId,
+    type
+  );
+
+  const toReceive = result?.to_receive ?? 0;
+  const toPay = result?.to_pay ?? 0;
+
+  return {
+    toReceive,
+    toPay,
+    netBalance: toReceive - toPay,
+  };
+}
+
 
   /**
    * Fetches one page of party balances, plus an all-matches total.
