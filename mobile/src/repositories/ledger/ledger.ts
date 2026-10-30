@@ -6,6 +6,9 @@ import type {
   LedgerEntry,
   LedgerEntryType,
 } from '@/types/domain';
+import {
+  isValidSyncQuantity,
+} from '@/utils/ledger/quantity-precision';
 
 export type PartyLedgerEntry =
   Omit<LedgerEntry, 'customer_id'> & {
@@ -226,16 +229,15 @@ export class LedgerRepository {
        * Missing quantity remains null.
        */
       if (
-        quantity !== null &&
-        (
-          !Number.isFinite(quantity) ||
-          quantity <= 0
-        )
-      ) {
-        throw new Error(
-          `Enter a valid positive quantity for ${name}`
-        );
-      }
+          quantity !== null &&
+          !isValidSyncQuantity(quantity)
+        ) {
+          throw new Error(
+            `Quantity for ${name} must be positive, ` +
+            'have at most 3 decimal places, ' +
+            'and be within the supported range'
+          );
+        }
 
       /*
        * A recorded quantity requires a unit.

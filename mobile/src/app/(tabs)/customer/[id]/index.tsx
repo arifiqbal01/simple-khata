@@ -55,12 +55,6 @@ interface CustomerSummary {
   outstanding: number;
 }
 
-const EMPTY_SUMMARY: CustomerSummary = {
-  totalUdhaar: 0,
-  totalPayments: 0,
-  outstanding: 0,
-};
-
 export default function CustomerLedgerScreen() {
   const { shopName } = useShopIdentity();
 
@@ -77,7 +71,6 @@ export default function CustomerLedgerScreen() {
     ? params.from[0]
     : params.from;
 
-  // Shared party ledger hook, restricted to customers.
   const {
     shopId,
     party,
@@ -89,7 +82,6 @@ export default function CustomerLedgerScreen() {
     refresh: refreshParty,
   } = usePartyLedger(customerId, 'CUSTOMER');
 
-  // Shared paginated transaction history.
   const {
     entries,
     filter,
@@ -106,14 +98,17 @@ export default function CustomerLedgerScreen() {
     'CUSTOMER'
   );
 
-  const [customerSummary, setCustomerSummary] =
-    useState<CustomerSummary>(EMPTY_SUMMARY);
+  const [
+    customerSummary,
+    setCustomerSummary,
+  ] = useState<CustomerSummary | null>(null);
 
   const summaryRequestRef = useRef(0);
 
   const loadCustomerSummary = useCallback(
     async (): Promise<void> => {
       if (!shopId || !customerId) {
+        setCustomerSummary(null);
         return;
       }
 
@@ -141,7 +136,6 @@ export default function CustomerLedgerScreen() {
     [shopId, customerId]
   );
 
-  // Reload totals whenever the ledger screen gains focus.
   useFocusEffect(
     useCallback(() => {
       let active = true;
@@ -420,20 +414,19 @@ export default function CustomerLedgerScreen() {
         }
         ListHeaderComponent={
           <>
-
-            <PartyLedgerHeader
-              partyType="CUSTOMER"
-              balance={balance}
-              moneyOut={customerSummary.totalUdhaar}
-              moneyIn={customerSummary.totalPayments}
-              filter={filter}
-              onFilterChange={setFilter}
-              onAddTransaction={handleAddUdhaar}
-              onPayment={handlePayment}
-              onShareWhatsApp={handleShareWhatsApp}
-              isSharing={isSharing}
-            />
-
+           <PartyLedgerHeader
+                  partyType="CUSTOMER"
+                  hideSummaryTitle
+                  balance={balance}
+                  moneyOut={customerSummary?.totalUdhaar ?? 0}
+                  moneyIn={customerSummary?.totalPayments ?? 0}
+                  filter={filter}
+                  onFilterChange={setFilter}
+                  onAddTransaction={handleAddUdhaar}
+                  onPayment={handlePayment}
+                  onShareWhatsApp={handleShareWhatsApp}
+                  isSharing={isSharing}
+                />
 
             {partyError || transactionsError ? (
               <View className="mt-5 rounded-control bg-udhaar-soft px-4 py-3">

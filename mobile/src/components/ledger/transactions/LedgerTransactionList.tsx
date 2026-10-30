@@ -98,19 +98,26 @@ export function LedgerTransactionList({
   const renderItem = useCallback<
     ListRenderItem<PartyTransactionEntry>
   >(
-    ({ item }) => (
-      <LedgerRow
-        entry={item}
-        selected={selectedEntryId === item.id}
-        onPress={
-          onSelectEntry
-            ? () => onSelectEntry(item.id)
-            : undefined
-        }
-        onDelete={onDeleteEntry}
-        isDeleting={isDeleting}
-      />
-    ),
+    ({ item }) => {
+      const isSelected =
+        selectedEntryId === item.id;
+
+      return (
+        <LedgerRow
+          entry={item}
+          selected={isSelected}
+          onPress={
+            onSelectEntry
+              ? () => onSelectEntry(item.id)
+              : undefined
+          }
+          onDelete={onDeleteEntry}
+          isDeleting={
+            isDeleting && isSelected
+          }
+        />
+      );
+    },
     [
       selectedEntryId,
       onSelectEntry,
@@ -129,6 +136,10 @@ export function LedgerTransactionList({
       data={entries}
       keyExtractor={(entry) => entry.id}
       renderItem={renderItem}
+      extraData={{
+        selectedEntryId,
+        isDeleting,
+      }}
       showsVerticalScrollIndicator={false}
       contentContainerClassName="pb-8"
 

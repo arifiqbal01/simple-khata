@@ -11,6 +11,7 @@ import { router } from 'expo-router';
 
 import { PartyList } from '@/components/party';
 import { AppHeader } from '@/components/layout';
+import { FinancialSummary } from '@/components/ledger/shared';
 
 import {
   AppText,
@@ -22,6 +23,7 @@ import {
 } from '@/components/ui';
 
 import { usePartyList } from '@/hooks/party/usePartyList';
+import { usePartyFinancialTotals } from '@/hooks/party/usePartyFinancialTotals';
 import { useDeleteParty } from '@/hooks/party/useDeleteParty';
 import { useShopIdentity } from '@/hooks/shop/useShopIdentity';
 
@@ -41,15 +43,28 @@ export default function CustomersScreen() {
   } = usePartyList('CUSTOMER');
 
   const {
+    totals: customerTotals,
+    error: totalsError,
+    refresh: refreshTotals,
+  } = usePartyFinancialTotals('CUSTOMER');
+
+  const {
     shopId,
     deviceId,
     loading: identityLoading,
     error: identityError,
   } = useShopIdentity();
 
+  const handleRefresh = useCallback(async () => {
+    await Promise.all([
+      refresh(),
+      refreshTotals(),
+    ]);
+  }, [refresh, refreshTotals]);
+
   const onDeleted = useCallback(async () => {
-    await refresh();
-  }, [refresh]);
+    await handleRefresh();
+  }, [handleRefresh]);
 
   const {
     partyToDelete,
@@ -139,6 +154,25 @@ export default function CustomersScreen() {
     <Screen>
       <AppHeader title="Customers" />
 
+      {/* Customer financial overview */}
+      {customerTotals !== null && (
+        <FinancialSummary
+          variant="customer"
+          title="CUSTOMER OVERVIEW"
+          balanceLabel="Net Balance"
+          balance={
+            customerTotals.toPay -
+            customerTotals.toReceive
+          }
+          leftLabel="To Receive"
+          leftAmount={customerTotals.toPay}
+          leftDirection="receive"
+          rightLabel="To Pay"
+          rightAmount={customerTotals.toReceive}
+          rightDirection="pay"
+        />
+      )}
+
       <View className="mb-4">
         <SearchField
           value={query}
@@ -147,13 +181,19 @@ export default function CustomersScreen() {
         />
       </View>
 
-      {error || identityError || deleteError ? (
+      {error ||
+      identityError ||
+      deleteError ||
+      totalsError ? (
         <View className="mb-4 rounded-control bg-udhaar-soft px-4 py-3">
           <AppText
             variant="small"
             className="text-udhaar"
           >
-            {deleteError ?? identityError ?? error}
+            {deleteError ??
+              identityError ??
+              totalsError ??
+              error}
           </AppText>
         </View>
       ) : null}
@@ -165,7 +205,7 @@ export default function CustomersScreen() {
         onDeleteParty={confirmDeleteParty}
         refreshing={refreshing}
         onRefresh={() => {
-          void refresh();
+          void handleRefresh();
         }}
         onQuickTransaction={handleQuickUdhaar}
         onOpenParty={handleOpenCustomer}

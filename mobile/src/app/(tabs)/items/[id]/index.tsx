@@ -11,17 +11,19 @@ import {
 } from 'react-native';
 
 import { Ionicons } from '@expo/vector-icons';
+
 import {
   router,
   useLocalSearchParams,
 } from 'expo-router';
 
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { AppHeader } from '@/components/layout';
 
 import {
   AppText,
   Button,
   ConfirmModal,
+  Screen,
 } from '@/components/ui';
 
 import { ItemForm } from '@/components/item';
@@ -161,109 +163,113 @@ export default function EditItemScreen() {
     (shopId && itemLoading)
   ) {
     return (
-      <SafeAreaView
-        edges={['top']}
-        className="flex-1 items-center justify-center bg-background"
-      >
-        <ActivityIndicator
-          size="small"
-          color="#242422"
-        />
-      </SafeAreaView>
+      <Screen>
+        <AppHeader title="Edit Item" />
+
+        <View className="flex-1 items-center justify-center">
+          <ActivityIndicator
+            size="large"
+            color="#242422"
+          />
+        </View>
+      </Screen>
     );
   }
 
   if (!shopId || !deviceId) {
     return (
-      <SafeAreaView
-        edges={['top']}
-        className="flex-1 items-center justify-center bg-background px-5"
-      >
-        <Ionicons
-          name="storefront-outline"
-          size={38}
-          color="#9A9A93"
-        />
+      <Screen>
+        <AppHeader title="Edit Item" />
 
-        <AppText className="mt-4 text-center font-spline-semibold text-[17px] text-foreground">
-          Shop Unavailable
-        </AppText>
+        <View className="flex-1 items-center justify-center px-5">
+          <Ionicons
+            name="storefront-outline"
+            size={38}
+            color="#9A9A93"
+          />
 
-        <AppText className="mt-2 text-center text-[13px] text-muted">
-          {identityError ??
-            'Shop or device identity is unavailable.'}
-        </AppText>
-
-        <Pressable
-          onPress={() => {
-            void reloadIdentity();
-          }}
-          accessibilityRole="button"
-          className="mt-5 rounded-xl bg-chip px-6 py-3"
-        >
-          <AppText className="font-spline-semibold text-foreground">
-            Try Again
+          <AppText className="mt-4 text-center font-spline-semibold text-[17px] text-foreground">
+            Shop Unavailable
           </AppText>
-        </Pressable>
-      </SafeAreaView>
+
+          <AppText className="mt-2 text-center text-[13px] text-muted">
+            {identityError ??
+              'Shop or device identity is unavailable.'}
+          </AppText>
+
+          <Pressable
+            onPress={() => {
+              void reloadIdentity();
+            }}
+            accessibilityRole="button"
+            className="mt-5 rounded-xl bg-chip px-6 py-3"
+          >
+            <AppText className="font-spline-semibold text-foreground">
+              Try Again
+            </AppText>
+          </Pressable>
+        </View>
+      </Screen>
     );
   }
 
   if (!item) {
     return (
-      <SafeAreaView
-        edges={['top']}
-        className="flex-1 items-center justify-center bg-background px-5"
-      >
-        <Ionicons
-          name="cube-outline"
-          size={38}
-          color="#9A9A93"
-        />
+      <Screen>
+        <AppHeader title="Edit Item" />
 
-        <AppText className="mt-4 text-center font-spline-semibold text-[17px] text-foreground">
-          Item Unavailable
-        </AppText>
-
-        <AppText className="mt-2 text-center text-[13px] text-muted">
-          {loadError ?? 'Item not found.'}
-        </AppText>
-
-        <View className="mt-5 w-full">
-          <Button
-            label="Try Again"
-            onPress={refresh}
+        <View className="flex-1 items-center justify-center px-5">
+          <Ionicons
+            name="cube-outline"
+            size={38}
+            color="#9A9A93"
           />
-        </View>
 
-        <View className="mt-3 w-full">
-          <Button
-            label="Go Back"
-            variant="secondary"
-            onPress={() => router.back()}
-          />
+          <AppText className="mt-4 text-center font-spline-semibold text-[17px] text-foreground">
+            Item Unavailable
+          </AppText>
+
+          <AppText className="mt-2 text-center text-[13px] text-muted">
+            {loadError ?? 'Item not found.'}
+          </AppText>
+
+          <View className="mt-5 w-full">
+            <Button
+              label="Try Again"
+              onPress={refresh}
+            />
+          </View>
+
+          <View className="mt-3 w-full">
+            <Button
+              label="Go Back"
+              variant="secondary"
+              onPress={() => router.back()}
+            />
+          </View>
         </View>
-      </SafeAreaView>
+      </Screen>
     );
   }
 
   return (
-    <SafeAreaView
-      edges={['top']}
-      className="flex-1 bg-background"
-    >
-      <ItemForm
-        values={values}
-        onChange={onChange}
-        onSubmit={() => {
-          void handleSave();
-        }}
-        saving={saving}
-        deleting={deleting}
-        mode="edit"
-        error={formError}
-        onDelete={handleDelete}
-      />
+    <Screen>
+      <AppHeader title="Edit Item" />
+
+      <View className="flex-1">
+        <ItemForm
+          values={values}
+          onChange={onChange}
+          onSubmit={() => {
+            void handleSave();
+          }}
+          saving={saving}
+          deleting={deleting}
+          mode="edit"
+          error={formError}
+          onDelete={handleDelete}
+        />
+      </View>
 
       <ConfirmModal
         visible={showDeleteConfirmation}
@@ -278,6 +284,6 @@ export default function EditItemScreen() {
         }}
         onCancel={handleCancelDelete}
       />
-    </SafeAreaView>
+    </Screen>
   );
 }

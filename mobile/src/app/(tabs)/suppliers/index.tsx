@@ -15,6 +15,7 @@ import { router } from 'expo-router';
 
 import { PartyList } from '@/components/party';
 import { AppHeader } from '@/components/layout';
+import { FinancialSummary } from '@/components/ledger/shared';
 
 import {
   AppText,
@@ -26,10 +27,9 @@ import {
 } from '@/components/ui';
 
 import { usePartyList } from '@/hooks/party/usePartyList';
+import { usePartyFinancialTotals } from '@/hooks/party/usePartyFinancialTotals';
 import { useDeleteParty } from '@/hooks/party/useDeleteParty';
 import { useShopIdentity } from '@/hooks/shop/useShopIdentity';
-
-const PAGE_SIZE = 25;
 
 export default function SuppliersScreen() {
   const {
@@ -40,14 +40,15 @@ export default function SuppliersScreen() {
     error,
     handleSearch,
     refresh,
-
-    // Pagination support from usePartyList.
     hasMore,
     loadingMore,
     loadMore,
-  } = usePartyList('SUPPLIER', {
-    pageSize: PAGE_SIZE,
-  });
+  } = usePartyList('SUPPLIER');
+
+  const {
+    totals: supplierTotals,
+    error: totalsError,
+  } = usePartyFinancialTotals('SUPPLIER');
 
   const {
     shopId,
@@ -157,6 +158,22 @@ export default function SuppliersScreen() {
     <Screen>
       <AppHeader title="Suppliers" />
 
+      {/* Supplier financial overview */}
+      {supplierTotals !== null && (
+        <FinancialSummary
+          variant="supplier"
+          title="SUPPLIER OVERVIEW"
+          balanceLabel="Net Balance"
+          balance={supplierTotals.netBalance}
+          leftLabel="To Receive"
+          leftAmount={supplierTotals.toReceive}
+          leftDirection="receive"
+          rightLabel="To Pay"
+          rightAmount={supplierTotals.toPay}
+          rightDirection="pay"
+        />
+      )}
+
       <View className="mb-4">
         <SearchField
           value={query}
@@ -165,13 +182,19 @@ export default function SuppliersScreen() {
         />
       </View>
 
-      {error || identityError || deleteError ? (
+      {error ||
+      identityError ||
+      deleteError ||
+      totalsError ? (
         <View className="mb-4 rounded-control bg-udhaar-soft px-4 py-3">
           <AppText
             variant="small"
             className="text-udhaar"
           >
-            {deleteError ?? identityError ?? error}
+            {deleteError ??
+              identityError ??
+              totalsError ??
+              error}
           </AppText>
         </View>
       ) : null}

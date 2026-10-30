@@ -1,4 +1,3 @@
-
 import '../../global.css';
 
 import React, {
@@ -30,6 +29,7 @@ import { StatusBar } from 'expo-status-bar';
 import Toast from 'react-native-toast-message';
 
 import { toastConfig } from '@/components/ui/toastConfig';
+import { BackupLifecycle } from '@/components/backup/BackupLifecycle';
 import { SyncLifecycle } from '@/components/sync';
 import { runMigrations } from '@/db/migrations';
 
@@ -132,7 +132,22 @@ export default function RootLayout() {
         translucent={false}
       />
 
-      {/* Start sync only after database migrations. */}
+      {/*
+       * Check whether an automatic SQLite backup
+       * is due after database migrations complete.
+       *
+       * BackupLifecycle checks on mount and when
+       * the app returns to the foreground.
+       */}
+      <BackupLifecycle />
+
+      {/*
+       * Start sync only after database migrations.
+       *
+       * Note: BackupLifecycle and SyncLifecycle
+       * can run concurrently. This does not
+       * guarantee backup completion before sync.
+       */}
       <SyncLifecycle />
 
       <Stack

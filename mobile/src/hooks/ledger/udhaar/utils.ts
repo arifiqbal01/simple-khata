@@ -14,6 +14,11 @@ import type {
   UdhaarEntryMode,
 } from './types';
 
+
+const QUANTITY_DECIMAL_PLACES = 3;
+const QUANTITY_SCALE = 1000;
+const MAX_QUANTITY = 999_999_999.999;
+
 export function normalizeName(name: string): string {
   return name.trim().toLocaleLowerCase();
 }
@@ -67,9 +72,24 @@ export function parseQuantity(
 
   const quantity = Number(text);
 
-  return Number.isFinite(quantity) && quantity > 0
-    ? quantity
-    : null;
+  if (
+    !Number.isFinite(quantity) ||
+    quantity <= 0 ||
+    quantity > MAX_QUANTITY
+  ) {
+    return null;
+  }
+
+  const fractionalPart = text.split('.')[1] ?? '';
+
+  if (
+    fractionalPart.replace(/0+$/, '').length >
+    QUANTITY_DECIMAL_PLACES
+  ) {
+    return null;
+  }
+
+  return quantity;
 }
 
 export function parseUnitPrice(
@@ -124,21 +144,50 @@ export function calculateQuantity(
 
   const quantity = amount / unitPrice;
 
-  return Number.isFinite(quantity) && quantity > 0
-    ? quantity
-    : null;
+  if (
+    !Number.isFinite(quantity) ||
+    quantity <= 0 ||
+    quantity > MAX_QUANTITY
+  ) {
+    return null;
+  }
+
+  const roundedQuantity =
+    Math.round(quantity * QUANTITY_SCALE) /
+    QUANTITY_SCALE;
+
+  if (
+    roundedQuantity <= 0 ||
+    roundedQuantity > MAX_QUANTITY
+  ) {
+    return null;
+  }
+
+  return roundedQuantity;
 }
 
 export function formatCalculatedQuantity(
   quantity: number,
-  decimalPlaces = 6
+  decimalPlaces = QUANTITY_DECIMAL_PLACES
 ): string {
-  if (!Number.isFinite(quantity) || quantity <= 0) {
+  if (
+    !Number.isFinite(quantity) ||
+    quantity <= 0 ||
+    quantity > MAX_QUANTITY
+  ) {
     return '';
   }
 
+  const places = Math.max(
+    0,
+    Math.min(
+      QUANTITY_DECIMAL_PLACES,
+      Math.trunc(decimalPlaces)
+    )
+  );
+
   return quantity
-    .toFixed(decimalPlaces)
+    .toFixed(places)
     .replace(/\.?0+$/, '');
 }
 

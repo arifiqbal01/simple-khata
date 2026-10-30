@@ -12,7 +12,9 @@ import {
 } from '@/repositories/ledger/ledger';
 
 import { SyncOutboxRepository } from '@/repositories/sync/sync-outbox';
-
+import {
+  isValidSyncQuantity,
+} from '@/utils/ledger/quantity-precision';
 import { requestSync } from '@/services/sync/sync-coordinator';
 
 export interface CreateUdhaarItemInput {
@@ -75,16 +77,15 @@ function normalizeUdhaarItem(
   const suppliedAmount = item.amount ?? null;
 
   if (
-    quantity !== null &&
-    (
-      !Number.isFinite(quantity) ||
-      quantity <= 0
-    )
-  ) {
-    throw new Error(
-      `Enter a valid positive quantity for ${name}`
-    );
-  }
+  quantity !== null &&
+  !isValidSyncQuantity(quantity)
+) {
+  throw new Error(
+    `Quantity for ${name} must be positive, ` +
+    'at most 3 decimal places, and within ' +
+    'the supported range'
+  );
+}
 
   if (unit !== null && unit.length > 30) {
     throw new Error(

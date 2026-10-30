@@ -162,17 +162,23 @@ export default function SupplierProductsScreen() {
   ]);
 
   if (supplierLoading && !party) {
-    return (
-      <Screen>
-        <View className="flex-1 items-center justify-center">
-          <ActivityIndicator
-            size="large"
-            color="#242422"
-          />
-        </View>
-      </Screen>
-    );
-  }
+  return (
+    <Screen>
+      <AppHeader
+        title="Supplier Products"
+        showBack
+        onBackPress={() => router.back()}
+      />
+
+      <View className="flex-1 items-center justify-center">
+        <ActivityIndicator
+          size="large"
+          color="#242422"
+        />
+      </View>
+    </Screen>
+  );
+}
 
   return (
     <Screen>
