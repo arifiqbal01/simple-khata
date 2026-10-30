@@ -3,37 +3,47 @@ import type { SQLiteDatabase } from 'expo-sqlite';
 
 import { getDatabase } from '@/db/database';
 
-type TransactionTask<T> = (
+type DatabaseTask<T> = (
   db: SQLiteDatabase
 ) => Promise<T>;
 
-/**
- * Shared queue for SQLite write transactions.
- *
- * Prevents overlapping transactions on the
- * same database connection when all transactional
- * services use this helper.
- */
 let transactionQueue: Promise<void> = Promise.resolve();
 
 /**
- * Execute a database write transaction.
+ * Run a database operation exclusively through the
+ * shared application queue.
  *
- * - Runs transactions sequentially.
- * - Preserves atomic commits and rollbacks.
- * - Keeps the queue working after failures.
- * - Returns the callback's result.
+ * This does NOT open a transaction.
  *
- * IMPORTANT:
- * Do not call runWriteTransaction() from inside
- * another runWriteTransaction() callback.
+ * Suitable for operations such as VACUUM INTO,
+ * which must run outside a transaction.
  */
-export function runWriteTransaction<T>(
-  task: TransactionTask<T>
+export function runExclusiveDatabaseOperation<T>(
+  task: DatabaseTask<T>
 ): Promise<T> {
   const operation = transactionQueue.then(async () => {
     const db = await getDatabase();
+    return task(db);
+  });
 
+  transactionQueue = operation.then(
+    () => undefined,
+    () => undefined
+  );
+
+  return operation;
+}
+
+/**
+ * Run a SQLite write transaction in the shared queue.
+ *
+ * Do not nest this function or call it from inside
+ * runExclusiveDatabaseOperation().
+ */
+export function runWriteTransaction<T>(
+  task: DatabaseTask<T>
+): Promise<T> {
+  return runExclusiveDatabaseOperation(async (db) => {
     let result!: T;
 
     await db.withTransactionAsync(async () => {
@@ -42,12 +52,4 @@ export function runWriteTransaction<T>(
 
     return result;
   });
-
-  // A failed transaction must not block future writes.
-  transactionQueue = operation.then(
-    () => undefined,
-    () => undefined
-  );
-
-  return operation;
 }
