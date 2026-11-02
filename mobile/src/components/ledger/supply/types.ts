@@ -4,7 +4,8 @@ export interface DraftSupplyItem {
   itemId: string | null;
   name: string;
 
-  // String fields make TextField editing simple.
+  // Editable values remain strings.
+  amount: string;
   quantity: string;
   unit: string;
   unitPrice: string;

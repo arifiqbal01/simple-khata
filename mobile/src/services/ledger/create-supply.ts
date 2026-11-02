@@ -17,6 +17,10 @@ import {
 
 import { requestSync } from '@/services/sync/sync-coordinator';
 
+import {
+  isValidSyncQuantity,
+} from '@/utils/ledger/quantity-precision';
+
 export interface CreateSupplyItemInput {
   itemId?: string | null;
   name: string;
@@ -50,8 +54,10 @@ export class CreateSupplyService {
   constructor(
     private readonly ledgerRepository =
       new LedgerRepository(),
+
     private readonly partyRepository =
       new PartyRepository(),
+
     private readonly outboxRepository:
       SyncOutboxRepository = syncOutboxRepository
   ) {}
@@ -77,7 +83,10 @@ export class CreateSupplyService {
 
     validateAmount(input.amount);
 
-    // Supply entries must belong to a supplier.
+    /*
+     * Supply transactions belong only
+     * to active suppliers in this shop.
+     */
     const supplier =
       await this.partyRepository.getByIdAndShop(
         partyId,
@@ -91,6 +100,10 @@ export class CreateSupplyService {
       throw new Error('Supplier not found');
     }
 
+    /*
+     * Normalize and validate every item
+     * before beginning the write transaction.
+     */
     const normalizedItems: NormalizedSupplyItem[] =
       (input.items ?? []).map((item) => {
         const name = item.name.trim();
@@ -125,7 +138,7 @@ export class CreateSupplyService {
         const unitPrice =
           item.unitPrice ?? null;
 
-        const amount =
+        const suppliedAmount =
           item.amount ?? null;
 
         if (
@@ -141,10 +154,10 @@ export class CreateSupplyService {
         }
 
         if (
-          amount !== null &&
+          suppliedAmount !== null &&
           (
-            !Number.isSafeInteger(amount) ||
-            amount < 0
+            !Number.isSafeInteger(suppliedAmount) ||
+            suppliedAmount < 0
           )
         ) {
           throw new Error(
@@ -152,18 +165,52 @@ export class CreateSupplyService {
           );
         }
 
+        /*
+         * IMPORTANT:
+         *
+         * If the caller provides an amount,
+         * it is authoritative.
+         *
+         * In Amount Mode, quantity may have
+         * been rounded to three decimals.
+         *
+         * Therefore, do NOT require:
+         *
+         * quantity * unitPrice === amount
+         */
+        let amount = suppliedAmount;
+
+        /*
+         * Quantity-first fallback:
+         *
+         * If an amount was not supplied,
+         * derive it once and round to
+         * whole rupees.
+         */
         if (
+          amount === null &&
           quantity !== null &&
-          unitPrice !== null &&
-          amount !== null
+          unitPrice !== null
         ) {
           const calculatedAmount =
             Number(quantity) * unitPrice;
 
           if (
-            !Number.isSafeInteger(calculatedAmount) ||
-            calculatedAmount !== amount
+            !Number.isFinite(calculatedAmount) ||
+            calculatedAmount < 0 ||
+            calculatedAmount >
+              Number.MAX_SAFE_INTEGER
           ) {
+            throw new Error(
+              `Invalid total for item "${name}"`
+            );
+          }
+
+          amount = Math.round(
+            calculatedAmount
+          );
+
+          if (!Number.isSafeInteger(amount)) {
             throw new Error(
               `Invalid total for item "${name}"`
             );
@@ -187,23 +234,39 @@ export class CreateSupplyService {
       );
     }
 
-    const itemTotal =
-      normalizedItems.reduce(
-        (total, item) =>
-          total + (item.amount ?? 0),
-        0
-      );
+    /*
+     * Supply entries require a quantity,
+     * unit price and amount for every item.
+     *
+     * The sum of authoritative line amounts
+     * must equal the parent ledger amount.
+     */
+    let itemTotal = 0;
 
-    if (
-      normalizedItems.some(
-        (item) =>
-          item.quantity === null ||
-          item.unitPrice === null ||
-          item.amount === null
-      ) ||
-      !Number.isSafeInteger(itemTotal) ||
-      itemTotal !== input.amount
-    ) {
+    for (const item of normalizedItems) {
+      if (
+        item.quantity === null ||
+        item.unitPrice === null ||
+        item.amount === null
+      ) {
+        throw new Error(
+          'Complete all supply item details'
+        );
+      }
+
+      const nextTotal =
+        itemTotal + item.amount;
+
+      if (!Number.isSafeInteger(nextTotal)) {
+        throw new Error(
+          'Supply item total exceeds the supported amount'
+        );
+      }
+
+      itemTotal = nextTotal;
+    }
+
+    if (itemTotal !== input.amount) {
       throw new Error(
         'Supply item totals do not match the transaction amount'
       );
@@ -239,16 +302,19 @@ export class CreateSupplyService {
     const operationId = Crypto.randomUUID();
 
     /*
-     * Commit the ledger entry, item snapshots,
-     * and sync outbox operation atomically.
+     * The ledger entry, item snapshots,
+     * and outbox operation must commit
+     * atomically.
      */
     await runWriteTransaction(async (db) => {
       /*
-       * Verify that the supplier is still active
-       * before writing the transaction.
+       * Verify that the supplier remains
+       * active at the moment of writing.
        */
       const activeSupplier =
-        await db.getFirstAsync<{ id: string }>(
+        await db.getFirstAsync<{
+          id: string;
+        }>(
           `
             SELECT id
             FROM parties
@@ -269,7 +335,7 @@ export class CreateSupplyService {
       }
 
       /*
-       * Insert the main ledger entry.
+       * Insert the parent ledger entry.
        */
       await this.ledgerRepository.createWithDatabase(
         db,
@@ -286,8 +352,10 @@ export class CreateSupplyService {
       );
 
       /*
-       * Save item snapshots independently
-       * of catalog names and prices.
+       * Store immutable item snapshots.
+       *
+       * Amount is not recalculated from
+       * the approximate quantity.
        */
       for (const item of normalizedItems) {
         await db.runAsync(
@@ -316,8 +384,11 @@ export class CreateSupplyService {
       }
 
       /*
-       * Queue the same entry and item snapshots
-       * for synchronization.
+       * Enqueue the same entry and item
+       * snapshots in the sync outbox.
+       *
+       * Preserve the existing operation
+       * type, payload structure and IDs.
        */
       await this.outboxRepository.enqueueWithDatabase(
         db,
@@ -365,8 +436,10 @@ export class CreateSupplyService {
     });
 
     /*
-     * The local transaction is now committed.
-     * Network errors must not undo the save.
+     * The local transaction has committed.
+     *
+     * Network failure must never undo
+     * the saved supply transaction.
      */
     void requestSync().catch((error) => {
       console.warn(
@@ -379,6 +452,13 @@ export class CreateSupplyService {
   }
 }
 
+/**
+ * Normalize quantity to a string suitable
+ * for SQLite snapshots and sync payloads.
+ *
+ * The backend accepts at most 3 fractional
+ * decimal places and 12 total digits.
+ */
 function normalizeQuantity(
   value: number | string | null | undefined
 ): string | null {
@@ -394,15 +474,29 @@ function normalizeQuantity(
 
   if (
     !/^\d+(?:\.\d+)?$/.test(quantity) ||
-    !Number.isFinite(Number(quantity)) ||
-    Number(quantity) <= 0
+    !isValidSyncQuantity(Number(quantity))
   ) {
     throw new Error(
-      'Item quantity must be greater than zero'
+      'Item quantity must be positive, within the supported range, and have at most 3 decimal places'
     );
   }
 
-  return quantity;
+  /*
+   * Canonicalize the number so a string
+   * containing redundant trailing zeros
+   * does not exceed backend precision.
+   */
+  const normalized = String(Number(quantity));
+
+  if (
+    !/^\d+(?:\.\d+)?$/.test(normalized)
+  ) {
+    throw new Error(
+      'Invalid item quantity'
+    );
+  }
+
+  return normalized;
 }
 
 function validateAmount(amount: number): void {

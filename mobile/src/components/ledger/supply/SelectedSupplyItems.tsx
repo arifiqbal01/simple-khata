@@ -3,72 +3,103 @@ import { memo } from 'react';
 import { View } from 'react-native';
 
 import { AppText } from '@/components/ui';
-import { SelectedItemChip } from '@/components/ledger/shared/SelectedItemChip';
 
-import type { DraftSupplyItem } from './types';
+import { UdhaarModeToggle } from
+  '@/components/ledger/udhaar/UdhaarModeToggle';
 
-interface SelectedSupplyItemsProps {
+import { SupplyItemRow } from './SupplyItemRow';
+
+import type {
+  DraftSupplyItem,
+  SupplyEntryMode,
+} from '@/hooks/ledger/supply/types';
+
+export interface SelectedSupplyItemsProps {
   items: DraftSupplyItem[];
+
+  mode: SupplyEntryMode;
+  onChangeMode: (mode: SupplyEntryMode) => void;
+
   onRemove: (id: string) => void;
+
+  onChangeAmount: (
+    id: string,
+    amount: string
+  ) => void;
+
+  onChangeQuantity: (
+    id: string,
+    quantity: string
+  ) => void;
+
+  disabled?: boolean;
 }
 
 export const SelectedSupplyItems = memo(
   function SelectedSupplyItems({
     items,
+    mode,
+    onChangeMode,
     onRemove,
+    onChangeAmount,
+    onChangeQuantity,
+    disabled = false,
   }: SelectedSupplyItemsProps) {
-    const completedItems = items.filter(
-      (item) => item.name.trim().length > 0
+    /*
+     * Only show products that have been
+     * selected from the supplier catalog.
+     *
+     * Empty draft rows stay hidden.
+     */
+    const selectedItems = items.filter(
+      (item) =>
+        item.itemId !== null &&
+        item.name.trim().length > 0
     );
 
-    if (completedItems.length === 0) {
-      return (
-        <AppText className="mt-3 text-[13px] text-muted">
-          Add an item to record this supply.
-        </AppText>
-      );
-    }
-
     return (
-      <View className="mt-4 rounded-2xl border border-border bg-surface px-4 py-3">
-        <View className="mb-3 flex-row items-center justify-between">
-          <AppText className="font-spline-medium text-[13px] text-muted">
-            Supplied items
+      <View className="mt-4 gap-4">
+        {/* Entry mode selector */}
+        <View className="flex-row items-center justify-between gap-3">
+          <AppText
+            variant="small"
+            className="text-muted"
+          >
+            Entry mode
           </AppText>
 
-          <AppText className="font-spline-semibold text-[13px] text-foreground">
-            {completedItems.length}
+          <UdhaarModeToggle
+            mode={mode}
+            onChangeMode={onChangeMode}
+            disabled={disabled}
+            className="w-52"
+          />
+        </View>
+
+        {/* Selected supplier product rows */}
+        {selectedItems.length > 0 ? (
+          <View className="mt-2 gap-2.5">
+            {selectedItems.map((item) => (
+              <SupplyItemRow
+                key={item.id}
+                item={item}
+                mode={mode}
+                onRemove={onRemove}
+                onChangeAmount={onChangeAmount}
+                onChangeQuantity={onChangeQuantity}
+                disabled={disabled}
+              />
+            ))}
+          </View>
+        ) : (
+          <AppText
+            variant="small"
+            className="mt-2 text-muted"
+          >
+            Add a product configured for this supplier
+            to record a supply.
           </AppText>
-        </View>
-
-        <View className="flex-row flex-wrap gap-2">
-          {completedItems.map((item) => {
-            const details = [
-              item.quantity.trim(),
-              item.unit.trim(),
-            ]
-              .filter(Boolean)
-              .join(' ');
-
-            return (
-              <View key={item.id} className="gap-1">
-                <SelectedItemChip
-                  name={item.name}
-                  onRemove={() => onRemove(item.id)}
-                />
-
-                {details ? (
-                  <AppText className="pl-2 text-[12px] text-muted">
-                    {details}
-                    {item.unitPrice.trim()
-                      ? ` · Rs ${item.unitPrice.trim()} / unit`
-                      : ''}
-                  </AppText>
-                ) : null}
-              </View>
-            );
-          })}
-        </View>
+        )}
       </View>
     );
   }

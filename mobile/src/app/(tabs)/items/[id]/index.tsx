@@ -80,6 +80,12 @@ export default function EditItemScreen() {
 
   const busy = saving || deleting;
 
+  const handleBack = useCallback(() => {
+    if (!busy) {
+      router.back();
+    }
+  }, [busy]);
+
   const handleSave = useCallback(async () => {
     if (
       identityLoading ||
@@ -158,13 +164,21 @@ export default function EditItemScreen() {
     deleteItem,
   ]);
 
+  const header = (
+    <AppHeader
+      title="Edit Item"
+      showBack
+      onBackPress={handleBack}
+    />
+  );
+
   if (
     identityLoading ||
     (shopId && itemLoading)
   ) {
     return (
       <Screen>
-        <AppHeader title="Edit Item" />
+        {header}
 
         <View className="flex-1 items-center justify-center">
           <ActivityIndicator
@@ -179,7 +193,7 @@ export default function EditItemScreen() {
   if (!shopId || !deviceId) {
     return (
       <Screen>
-        <AppHeader title="Edit Item" />
+        {header}
 
         <View className="flex-1 items-center justify-center px-5">
           <Ionicons
@@ -216,7 +230,7 @@ export default function EditItemScreen() {
   if (!item) {
     return (
       <Screen>
-        <AppHeader title="Edit Item" />
+        {header}
 
         <View className="flex-1 items-center justify-center px-5">
           <Ionicons
@@ -244,7 +258,7 @@ export default function EditItemScreen() {
             <Button
               label="Go Back"
               variant="secondary"
-              onPress={() => router.back()}
+              onPress={handleBack}
             />
           </View>
         </View>
@@ -254,7 +268,7 @@ export default function EditItemScreen() {
 
   return (
     <Screen>
-      <AppHeader title="Edit Item" />
+      {header}
 
       <View className="flex-1">
         <ItemForm

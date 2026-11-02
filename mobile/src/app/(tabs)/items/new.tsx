@@ -69,10 +69,18 @@ export default function NewItemScreen() {
     save,
   ]);
 
+  const header = (
+    <AppHeader
+      title="Add Item"
+      showBack
+      onBackPress={handleBack}
+    />
+  );
+
   if (identityLoading) {
     return (
       <Screen>
-        <AppHeader title="Add Item" />
+        {header}
 
         <View className="flex-1 items-center justify-center">
           <ActivityIndicator
@@ -87,7 +95,7 @@ export default function NewItemScreen() {
   if (!shopId || !deviceId) {
     return (
       <Screen>
-        <AppHeader title="Add Item" />
+        {header}
 
         <View className="flex-1 items-center justify-center px-5">
           <Ionicons
@@ -123,7 +131,7 @@ export default function NewItemScreen() {
 
   return (
     <Screen>
-      <AppHeader title="Add Item" />
+      {header}
 
       <View className="flex-1">
         <ItemForm
