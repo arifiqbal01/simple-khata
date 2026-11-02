@@ -23,6 +23,8 @@ export function useItems({
   query = '',
 }: UseItemsOptions) {
   const [items, setItems] = useState<Item[]>([]);
+  const [totalItems, setTotalItems] = useState(0);
+
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
@@ -80,19 +82,24 @@ export function useItems({
       } else {
         setLoading(true);
         setItems([]);
+        setTotalItems(0);
       }
 
       try {
-        const page = await fetchPage(
-          0,
-          generation
-        );
+        const [page, shopItemCount] = await Promise.all([
+          fetchPage(0, generation),
+          shopId.trim()
+            ? itemRepository.countByShop(shopId)
+            : Promise.resolve(0),
+        ]);
 
         if (generation !== generationRef.current) {
           return;
         }
 
         setItems(page);
+        setTotalItems(shopItemCount);
+
         offsetRef.current = page.length;
 
         const more = page.length === PAGE_SIZE;
@@ -117,7 +124,7 @@ export function useItems({
         }
       }
     },
-    [fetchPage]
+    [fetchPage, shopId]
   );
 
   useEffect(() => {
@@ -197,6 +204,7 @@ export function useItems({
 
   return {
     items,
+    totalItems,
     loading,
     loadingMore,
     refreshing,

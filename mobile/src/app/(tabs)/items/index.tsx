@@ -56,18 +56,19 @@ export default function ItemsScreen() {
   } = useShopIdentity();
 
   const {
-    items,
-    loading,
-    loadingMore,
-    refreshing,
-    error,
-    hasMore,
-    refresh,
-    loadMore,
-  } = useItems({
-    shopId: shopId ?? '',
-    query: searchQuery,
-  });
+  items,
+  totalItems,
+  loading,
+  loadingMore,
+  refreshing,
+  error,
+  hasMore,
+  refresh,
+  loadMore,
+} = useItems({
+  shopId: shopId ?? '',
+  query: searchQuery,
+});
 
   useFocusEffect(
     useCallback(() => {
@@ -223,7 +224,7 @@ export default function ItemsScreen() {
         ListHeaderComponent={
           <View className="mb-3">
             <ItemSummary
-              totalItems={items.length}
+              totalItems={totalItems}
               loading={initialLoading}
             />
 
