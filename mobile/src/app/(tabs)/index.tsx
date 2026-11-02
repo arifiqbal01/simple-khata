@@ -152,10 +152,12 @@ export default function HomeScreen() {
               deviceName={deviceName}
             />
 
-            <OutstandingSummary
-              toReceive={toReceive}
-              toPay={toPay}
-            />
+            <View className="px-2">
+              <OutstandingSummary
+                toReceive={toReceive}
+                toPay={toPay}
+              />
+            </View>
 
             <View className="mb-4">
               <SearchField

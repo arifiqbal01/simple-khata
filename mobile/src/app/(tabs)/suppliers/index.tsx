@@ -48,6 +48,7 @@ export default function SuppliersScreen() {
   const {
     totals: supplierTotals,
     error: totalsError,
+    refresh: refreshTotals,
   } = usePartyFinancialTotals('SUPPLIER');
 
   const {
@@ -56,6 +57,21 @@ export default function SuppliersScreen() {
     loading: identityLoading,
     error: identityError,
   } = useShopIdentity();
+
+  const endReachedRef = useRef(false);
+
+  const handleRefresh = useCallback(async () => {
+    endReachedRef.current = false;
+
+    await Promise.all([
+      refresh(),
+      refreshTotals(),
+    ]);
+  }, [refresh, refreshTotals]);
+
+  const onDeleted = useCallback(async () => {
+    await handleRefresh();
+  }, [handleRefresh]);
 
   const {
     partyToDelete,
@@ -67,10 +83,8 @@ export default function SuppliersScreen() {
   } = useDeleteParty({
     shopId,
     deviceId,
-    onDeleted: refresh,
+    onDeleted,
   });
-
-  const endReachedRef = useRef(false);
 
   const handleOpenSupplier = useCallback(
     (supplierId: string) => {
@@ -101,11 +115,6 @@ export default function SuppliersScreen() {
   const handleAddSupplier = useCallback(() => {
     router.push('/suppliers/new');
   }, []);
-
-  const handleRefresh = useCallback(() => {
-    endReachedRef.current = false;
-    void refresh();
-  }, [refresh]);
 
   const handleLoadMore = useCallback(() => {
     if (
@@ -156,49 +165,6 @@ export default function SuppliersScreen() {
 
   return (
     <Screen>
-      <AppHeader title="Suppliers" />
-
-      {/* Supplier financial overview */}
-      {supplierTotals !== null && (
-        <FinancialSummary
-          variant="supplier"
-          title="SUPPLIER OVERVIEW"
-          balanceLabel="Net Balance"
-          balance={supplierTotals.netBalance}
-          leftLabel="To Receive"
-          leftAmount={supplierTotals.toReceive}
-          leftDirection="receive"
-          rightLabel="To Pay"
-          rightAmount={supplierTotals.toPay}
-          rightDirection="pay"
-        />
-      )}
-
-      <View className="mb-4">
-        <SearchField
-          value={query}
-          onChangeText={handleSearchChange}
-          placeholder="Search suppliers"
-        />
-      </View>
-
-      {error ||
-      identityError ||
-      deleteError ||
-      totalsError ? (
-        <View className="mb-4 rounded-control bg-udhaar-soft px-4 py-3">
-          <AppText
-            variant="small"
-            className="text-udhaar"
-          >
-            {deleteError ??
-              identityError ??
-              totalsError ??
-              error}
-          </AppText>
-        </View>
-      ) : null}
-
       <PartyList
         partyType="SUPPLIER"
         parties={parties.map((party) => ({
@@ -211,7 +177,9 @@ export default function SuppliersScreen() {
         deletingPartyId={deletingPartyId}
         onDeleteParty={confirmDeleteParty}
         refreshing={refreshing}
-        onRefresh={handleRefresh}
+        onRefresh={() => {
+          void handleRefresh();
+        }}
         onOpenParty={handleOpenSupplier}
         onQuickTransaction={handleQuickSupply}
         onEndReached={handleLoadMore}
@@ -230,19 +198,65 @@ export default function SuppliersScreen() {
             : 'pb-4'
         }
         ListHeaderComponent={
-          parties.length > 0 ? (
-            <View className="mb-3 flex-row items-center justify-between px-1">
-              <AppText className="font-spline-medium text-[12px] text-muted">
-                {isSearching
-                  ? 'Search results'
-                  : 'Recently active suppliers'}
-              </AppText>
+          <View>
+            <AppHeader title="Suppliers" />
 
-              <AppText className="text-[12px] text-muted">
-                {parties.length} loaded
-              </AppText>
+            {supplierTotals !== null && (
+              <View className="px-2">
+              <FinancialSummary
+                variant="supplier"
+                title="SUPPLIER OVERVIEW"
+                balanceLabel="Supplier Outstanding"
+                balance={supplierTotals.netBalance}
+                leftLabel="Supply Received"
+                leftAmount={supplierTotals.toReceive}
+                leftDirection="receive"
+                rightLabel="Payments Made"
+                rightAmount={supplierTotals.toPay}
+                rightDirection="pay"
+              />
             </View>
-          ) : null
+            )}
+
+            <View className="mb-4">
+              <SearchField
+                value={query}
+                onChangeText={handleSearchChange}
+                placeholder="Search suppliers"
+              />
+            </View>
+
+            {error ||
+            identityError ||
+            deleteError ||
+            totalsError ? (
+              <View className="mb-4 rounded-control bg-udhaar-soft px-4 py-3">
+                <AppText
+                  variant="small"
+                  className="text-udhaar"
+                >
+                  {deleteError ??
+                    identityError ??
+                    totalsError ??
+                    error}
+                </AppText>
+              </View>
+            ) : null}
+
+            {parties.length > 0 ? (
+              <View className="mb-3 flex-row items-center justify-between px-1">
+                <AppText className="font-spline-medium text-[12px] text-muted">
+                  {isSearching
+                    ? 'Search results'
+                    : 'Recently active suppliers'}
+                </AppText>
+
+                <AppText className="text-[12px] text-muted">
+                  {parties.length} loaded
+                </AppText>
+              </View>
+            ) : null}
+          </View>
         }
         ListEmptyComponent={
           <EmptyState
@@ -274,7 +288,7 @@ export default function SuppliersScreen() {
           ) : hasMore && parties.length > 0 ? (
             <Pressable
               onPress={() => {
-                endReachedRef.current = false;
+                endReachedRef.current = true;
                 void loadMore();
               }}
               accessibilityRole="button"

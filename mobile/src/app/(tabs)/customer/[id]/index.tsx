@@ -414,6 +414,7 @@ export default function CustomerLedgerScreen() {
         }
         ListHeaderComponent={
           <>
+          <View className="px-2">
            <PartyLedgerHeader
                   partyType="CUSTOMER"
                   hideSummaryTitle
@@ -427,6 +428,7 @@ export default function CustomerLedgerScreen() {
                   onShareWhatsApp={handleShareWhatsApp}
                   isSharing={isSharing}
                 />
+               </View>
 
             {partyError || transactionsError ? (
               <View className="mt-5 rounded-control bg-udhaar-soft px-4 py-3">

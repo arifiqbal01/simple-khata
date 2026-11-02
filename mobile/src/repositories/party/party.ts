@@ -338,9 +338,19 @@ export class PartyRepository {
 
 
 
+
 /**
- * All-party financial totals.
+ * All-party transaction totals.
  * Independent of search and pagination.
+ *
+ * CUSTOMER:
+ *   toPay     = total UDHAAR given
+ *   toReceive = total PAYMENT received
+ *
+ * SUPPLIER:
+ *   toReceive = total SUPPLY received
+ *   toPay     = total PAYMENT made
+ *
  * Read-only: does not modify ledger or sync data.
  */
 async getFinancialTotals(
@@ -352,54 +362,56 @@ async getFinancialTotals(
   const db = await getDatabase();
 
   const result = await db.getFirstAsync<{
-    to_receive: number;
-    to_pay: number;
+    transaction_total: number;
+    payment_total: number;
   }>(
     `SELECT
        COALESCE(SUM(
-         CASE WHEN balances.balance < 0
-           THEN -balances.balance ELSE 0 END
-       ), 0) AS to_receive,
+         CASE
+           WHEN (? = 'CUSTOMER' AND le.type = 'UDHAAR')
+             OR (? = 'SUPPLIER' AND le.type = 'SUPPLY')
+           THEN le.amount
+           ELSE 0
+         END
+       ), 0) AS transaction_total,
        COALESCE(SUM(
-         CASE WHEN balances.balance > 0
-           THEN balances.balance ELSE 0 END
-       ), 0) AS to_pay
-     FROM (
-       SELECT
-         p.id,
-         COALESCE(SUM(
-           CASE
-             WHEN p.type = 'CUSTOMER'
-               AND le.type = 'UDHAAR'
-               THEN le.amount
-             WHEN p.type = 'SUPPLIER'
-               AND le.type = 'SUPPLY'
-               THEN le.amount
-             WHEN le.type = 'PAYMENT'
-               THEN -le.amount
-             ELSE 0
-           END
-         ), 0) AS balance
-       FROM parties AS p
-       LEFT JOIN ledger_entries AS le
-         ON le.party_id = p.id
-         AND le.deleted_at IS NULL
-       WHERE p.shop_id = ?
-         AND p.type = ?
-         AND p.deleted_at IS NULL
-       GROUP BY p.id
-     ) AS balances`,
+         CASE
+           WHEN le.type = 'PAYMENT'
+           THEN le.amount
+           ELSE 0
+         END
+       ), 0) AS payment_total
+     FROM ledger_entries AS le
+     INNER JOIN parties AS p
+       ON p.id = le.party_id
+     WHERE p.shop_id = ?
+       AND p.type = ?
+       AND p.deleted_at IS NULL
+       AND le.deleted_at IS NULL`,
+    type,
+    type,
     shopId,
     type
   );
 
-  const toReceive = result?.to_receive ?? 0;
-  const toPay = result?.to_pay ?? 0;
+  const transactionTotal =
+    result?.transaction_total ?? 0;
+
+  const paymentTotal =
+    result?.payment_total ?? 0;
+
+  if (type === 'CUSTOMER') {
+    return {
+      toPay: transactionTotal,
+      toReceive: paymentTotal,
+      netBalance: transactionTotal - paymentTotal,
+    };
+  }
 
   return {
-    toReceive,
-    toPay,
-    netBalance: toReceive - toPay,
+    toReceive: transactionTotal,
+    toPay: paymentTotal,
+    netBalance: transactionTotal - paymentTotal,
   };
 }
 

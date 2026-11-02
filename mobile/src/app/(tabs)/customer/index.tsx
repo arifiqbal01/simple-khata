@@ -152,52 +152,6 @@ export default function CustomersScreen() {
 
   return (
     <Screen>
-      <AppHeader title="Customers" />
-
-      {/* Customer financial overview */}
-      {customerTotals !== null && (
-        <FinancialSummary
-          variant="customer"
-          title="CUSTOMER OVERVIEW"
-          balanceLabel="Net Balance"
-          balance={
-            customerTotals.toPay -
-            customerTotals.toReceive
-          }
-          leftLabel="To Receive"
-          leftAmount={customerTotals.toPay}
-          leftDirection="receive"
-          rightLabel="To Pay"
-          rightAmount={customerTotals.toReceive}
-          rightDirection="pay"
-        />
-      )}
-
-      <View className="mb-4">
-        <SearchField
-          value={query}
-          onChangeText={handleSearch}
-          placeholder="Search customers"
-        />
-      </View>
-
-      {error ||
-      identityError ||
-      deleteError ||
-      totalsError ? (
-        <View className="mb-4 rounded-control bg-udhaar-soft px-4 py-3">
-          <AppText
-            variant="small"
-            className="text-udhaar"
-          >
-            {deleteError ??
-              identityError ??
-              totalsError ??
-              error}
-          </AppText>
-        </View>
-      ) : null}
-
       <PartyList
         partyType="CUSTOMER"
         parties={parties}
@@ -217,19 +171,65 @@ export default function CustomersScreen() {
             : 'pb-4'
         }
         ListHeaderComponent={
-          parties.length > 0 ? (
-            <View className="mb-3 flex-row items-center justify-between px-1">
-              <AppText className="font-spline-medium text-[12px] text-muted">
-                {isSearching
-                  ? 'Search results'
-                  : 'Recently active customers'}
-              </AppText>
+          <View>
+            <AppHeader title="Customers" />
 
-              <AppText className="text-[12px] text-muted">
-                {parties.length} of {totalCount}
-              </AppText>
+            {customerTotals !== null && (
+              <View className="px-2">
+              <FinancialSummary
+                variant="customer"
+                title="CUSTOMER OVERVIEW"
+                balanceLabel="Customer Outstanding"
+                balance={customerTotals.netBalance}
+                leftLabel="Udhaar Given"
+                leftAmount={customerTotals.toPay}
+                leftDirection="pay"
+                rightLabel="Payments Received"
+                rightAmount={customerTotals.toReceive}
+                rightDirection="receive"
+              />
             </View>
-          ) : null
+            )}
+
+            <View className="mb-4">
+              <SearchField
+                value={query}
+                onChangeText={handleSearch}
+                placeholder="Search customers"
+              />
+            </View>
+
+            {error ||
+            identityError ||
+            deleteError ||
+            totalsError ? (
+              <View className="mb-4 rounded-control bg-udhaar-soft px-4 py-3">
+                <AppText
+                  variant="small"
+                  className="text-udhaar"
+                >
+                  {deleteError ??
+                    identityError ??
+                    totalsError ??
+                    error}
+                </AppText>
+              </View>
+            ) : null}
+
+            {parties.length > 0 ? (
+              <View className="mb-3 flex-row items-center justify-between px-1">
+                <AppText className="font-spline-medium text-[12px] text-muted">
+                  {isSearching
+                    ? 'Search results'
+                    : 'Recently active customers'}
+                </AppText>
+
+                <AppText className="text-[12px] text-muted">
+                  {parties.length} of {totalCount}
+                </AppText>
+              </View>
+            ) : null}
+          </View>
         }
         ListEmptyComponent={
           <EmptyState
