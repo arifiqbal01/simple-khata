@@ -66,6 +66,17 @@ export interface EnqueueSyncOperationInput {
   createdAt: string;
 }
 
+
+export interface SyncOutboxDiagnostic {
+  id: string;
+  operationType: SyncOperationType;
+  attemptCount: number;
+  lastAttemptAt: string | null;
+  nextAttemptAt: string | null;
+  lastError: string | null;
+  createdAt: string;
+}
+
 export interface MarkSyncAttemptFailedInput {
   id: string;
   nextAttemptAt: string;
@@ -233,6 +244,50 @@ async enqueueWithDatabase(
     );
     return row?.count ?? 0;
   }
+
+
+async getDiagnostics(
+  limit = 50
+): Promise<SyncOutboxDiagnostic[]> {
+  if (!Number.isInteger(limit) || limit < 1 || limit > 200) {
+    throw new Error('Invalid diagnostics limit');
+  }
+
+  const db = await getDatabase();
+
+  const rows = await db.getAllAsync<{
+    id: string;
+    operation_type: SyncOperationType;
+    attempt_count: number;
+    last_attempt_at: string | null;
+    next_attempt_at: string | null;
+    last_error: string | null;
+    created_at: string;
+  }>(
+    `SELECT
+       id,
+       operation_type,
+       attempt_count,
+       last_attempt_at,
+       next_attempt_at,
+       last_error,
+       created_at
+     FROM sync_outbox
+     ORDER BY rowid ASC
+     LIMIT ?`,
+    limit
+  );
+
+  return rows.map(row => ({
+    id: row.id,
+    operationType: row.operation_type,
+    attemptCount: row.attempt_count,
+    lastAttemptAt: row.last_attempt_at,
+    nextAttemptAt: row.next_attempt_at,
+    lastError: row.last_error,
+    createdAt: row.created_at,
+  }));
+}
 
   async hasPendingForEntity(entityType: SyncEntityType, entityId: string): Promise<boolean> {
     const db = await getDatabase();

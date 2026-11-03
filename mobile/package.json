@@ -20,6 +20,7 @@
     "@react-navigation/native": "^7.1.33",
     "babel-preset-expo": "~55.0.8",
     "expo": "~55.0.31",
+    "expo-clipboard": "~55.0.17",
     "expo-constants": "~55.0.17",
     "expo-crypto": "~55.0.19",
     "expo-device": "~55.0.21",
