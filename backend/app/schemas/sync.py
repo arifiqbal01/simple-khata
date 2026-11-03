@@ -4,7 +4,13 @@ from enum import StrEnum
 from typing import Annotated, Literal
 from uuid import UUID
 from decimal import Decimal
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    field_validator,
+    model_validator,
+)
 from app.models.enums import LedgerEntryType, PartyType
 
 
@@ -159,6 +165,7 @@ class LegacyLedgerEntrySyncData(BaseModel):
     createdAt: datetime
 
 
+
 class EntryItemSyncData(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -176,6 +183,45 @@ class EntryItemSyncData(BaseModel):
         decimal_places=3,
     )
 
+    @field_validator("quantity", mode="before")
+    @classmethod
+    def normalize_quantity(cls, value):
+        if value is None:
+            return None
+
+        if isinstance(value, bool) or not isinstance(
+            value, (int, float, str, Decimal)
+        ):
+            raise ValueError("Invalid quantity type")
+
+        try:
+            quantity = Decimal(str(value))
+        except Exception as exc:
+            raise ValueError("Invalid decimal quantity") from exc
+
+        if not quantity.is_finite():
+            raise ValueError("Quantity must be finite")
+
+        if quantity <= 0:
+            raise ValueError("Quantity must be greater than zero")
+
+        # Keep valid decimal quantities unchanged.
+        rounded = quantity.quantize(Decimal("0.001"))
+
+        if quantity == rounded:
+            return quantity
+
+        # Correct tiny floating-point representation errors.
+        # Do not silently round precise decimal strings.
+        if isinstance(value, float):
+            tolerance = Decimal("0.0000001")
+
+            if abs(quantity - rounded) <= tolerance:
+                return rounded
+
+        # Let Pydantic reject genuinely invalid precision.
+        return quantity
+
     unit: str | None = Field(
         default=None,
         min_length=1,
@@ -188,6 +234,7 @@ class EntryItemSyncData(BaseModel):
     )
 
     createdAt: datetime
+
 
 
 # ---------------------------------------------------------------------------
