@@ -3,7 +3,7 @@ from datetime import datetime
 from enum import StrEnum
 from typing import Annotated, Literal
 from uuid import UUID
-from decimal import Decimal
+from decimal import Decimal, ROUND_HALF_UP
 from pydantic import (
     BaseModel,
     ConfigDict,
@@ -166,6 +166,7 @@ class LegacyLedgerEntrySyncData(BaseModel):
 
 
 
+
 class EntryItemSyncData(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -205,22 +206,26 @@ class EntryItemSyncData(BaseModel):
         if quantity <= 0:
             raise ValueError("Quantity must be greater than zero")
 
-        # Keep valid decimal quantities unchanged.
-        rounded = quantity.quantize(Decimal("0.001"))
+        max_quantity = Decimal("999999999.999")
 
-        if quantity == rounded:
-            return quantity
+        if quantity > max_quantity:
+            raise ValueError(
+                "Quantity exceeds maximum allowed value"
+            )
 
-        # Correct tiny floating-point representation errors.
-        # Do not silently round precise decimal strings.
-        if isinstance(value, float):
-            tolerance = Decimal("0.0000001")
+        # Normalize legacy calculated quantities to 3 decimals.
+        normalized = quantity.quantize(
+            Decimal("0.001"),
+            rounding=ROUND_HALF_UP,
+        )
 
-            if abs(quantity - rounded) <= tolerance:
-                return rounded
+        # Prevent positive quantities from becoming zero.
+        if normalized <= 0:
+            raise ValueError(
+                "Quantity is too small for 3-decimal precision"
+            )
 
-        # Let Pydantic reject genuinely invalid precision.
-        return quantity
+        return normalized
 
     unit: str | None = Field(
         default=None,
@@ -234,6 +239,7 @@ class EntryItemSyncData(BaseModel):
     )
 
     createdAt: datetime
+
 
 
 

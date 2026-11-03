@@ -132,6 +132,9 @@ def apply_ledger_entry_create(
             item_id=item_data.itemId,
             name=item_data.itemName.strip(),
             amount=item_data.amount,
+            quantity=item_data.quantity,
+            unit=item_data.unit,
+            unit_price=item_data.unitPrice,
         )
 
 
