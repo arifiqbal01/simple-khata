@@ -14,6 +14,7 @@ import {
 import { SyncOutboxRepository } from '@/repositories/sync/sync-outbox';
 import {
   isValidSyncQuantity,
+  toSyncQuantityString,
 } from '@/utils/ledger/quantity-precision';
 import { requestSync } from '@/services/sync/sync-coordinator';
 
@@ -331,7 +332,10 @@ export class CreateUdhaarService {
       itemId: item.itemId,
       itemName: item.name,
       amount: item.amount ?? null,
-      quantity: item.quantity ?? null,
+      quantity:
+      item.quantity == null
+        ? null
+        : toSyncQuantityString(item.quantity),
       unit: item.unit ?? null,
       unitPrice: item.unitPrice ?? null,
       createdAt: now,
