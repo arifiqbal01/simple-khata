@@ -2,8 +2,6 @@
 import React, {
   useCallback,
   useEffect,
-  useRef,
-  useState,
   useSyncExternalStore,
 } from 'react';
 
@@ -13,10 +11,11 @@ import {
   View,
 } from 'react-native';
 
+import { router } from 'expo-router';
+
 import {
   getSyncState,
   refreshSyncState,
-  requestSync,
   subscribeToSyncState,
   type SyncStatus,
 } from '@/services/sync/sync-coordinator';
@@ -37,11 +36,6 @@ export function SyncStatusBadge({
     getSyncState,
     getSyncState
   );
-
-  const [requesting, setRequesting] =
-    useState(false);
-
-  const requestingRef = useRef(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -66,32 +60,17 @@ export function SyncStatusBadge({
     };
   }, []);
 
-  const isSyncing =
-    state.status === 'syncing' || requesting;
+  const isSyncing = state.status === 'syncing';
 
-  const handlePress = useCallback(async () => {
-    if (
-      requestingRef.current ||
-      state.status === 'syncing'
-    ) {
-      return;
-    }
-
-    requestingRef.current = true;
-    setRequesting(true);
-
-    try {
-      await requestSync();
-    } catch (error) {
-      console.warn(
-        '[sync-status] Manual sync failed:',
-        error
-      );
-    } finally {
-      requestingRef.current = false;
-      setRequesting(false);
-    }
-  }, [state.status]);
+  /**
+   * Open Sync Diagnostics instead of starting
+   * synchronization directly from the badge.
+   *
+   * Navigation remains available while syncing.
+   */
+  const handlePress = useCallback(() => {
+    router.push('/sync-diagnostics');
+  }, []);
 
   return (
     <Pressable
@@ -100,19 +79,11 @@ export function SyncStatusBadge({
         state,
         isSyncing
       )}
-      accessibilityHint={
-        isSyncing
-          ? 'Synchronization is in progress'
-          : 'Double tap to request synchronization'
-      }
+      accessibilityHint="Double tap to open sync diagnostics"
       accessibilityState={{
-        disabled: isSyncing,
         busy: isSyncing,
       }}
-      disabled={isSyncing}
-      onPress={() => {
-        void handlePress();
-      }}
+      onPress={handlePress}
       className={`
         min-h-[40px]
         flex-row
@@ -150,9 +121,7 @@ export function SyncStatusBadge({
           font-spline-semibold
           text-[15px]
           leading-[20px]
-          ${getTextClassName(
-            isSyncing ? 'syncing' : state.status
-          )}
+          ${getTextClassName(state.status)}
         `}
       >
         {getLabel(state, isSyncing)}
@@ -204,25 +173,25 @@ function getAccessibilityLabel(
 
   if (isSyncing) {
     return pendingCount > 0
-      ? `Sync in progress. ${pendingCount} changes pending`
-      : 'Sync in progress';
+      ? `Sync in progress. ${pendingCount} changes pending. Open sync diagnostics`
+      : 'Sync in progress. Open sync diagnostics';
   }
 
   if (state.status === 'error') {
     return pendingCount > 0
-      ? `Sync issue. ${pendingCount} changes waiting. Tap to retry`
-      : 'Sync issue. Tap to retry';
+      ? `Sync issue. ${pendingCount} changes waiting. Open sync diagnostics`
+      : 'Sync issue. Open sync diagnostics';
   }
 
   if (pendingCount > 0) {
-    return `${pendingCount} changes waiting to sync. Tap to sync now`;
+    return `${pendingCount} changes waiting to sync. Open sync diagnostics`;
   }
 
   if (state.status === 'synced') {
-    return 'All changes synced. Tap to sync again';
+    return 'All changes synced. Open sync diagnostics';
   }
 
-  return 'Sync now';
+  return 'Open sync diagnostics';
 }
 
 function getDotClassName(
